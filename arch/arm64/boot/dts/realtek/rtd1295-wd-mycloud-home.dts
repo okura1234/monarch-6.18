@@ -446,6 +446,21 @@
 		rgmii-rx-delay = <0>;
 		status = "okay";
 	};
+
+	/*
+	 * SPI-NOR flash controller (SFC). Single fixed chip, no child
+	 * nodes -- matches the vendor DTS (sfc@9801a800). This is the
+	 * same 1MB boot SPI-NOR that holds the FSBL; mtd0 offset 0 is the
+	 * vendor's dedicated RTC timestamp scratch area (see rtc-rtk.c /
+	 * the WD-RTC driver below), verified safe on real hardware before
+	 * porting (confirmed valid {seconds, ~seconds} pair already there,
+	 * not FSBL data).
+	 */
+	sfc: sfc@1a800 {
+		compatible = "realtek,rtk-sfc";
+		reg = <0x1a800 0x50>;
+		status = "okay";
+	};
 };
 
 &uart0 {
@@ -586,10 +601,20 @@
 		#pwm-cells = <2>;
 	};
 
-	rtc@600 {
-		compatible = "realtek,rtd1295-rtc";
-		reg = <0x600 0x34>;
-		clocks = <&osc27M>;
+	/*
+	 * The RTD1295 hardware RTC counter at this offset has no battery
+	 * backup on this board and free-runs from an arbitrary reset value
+	 * -- useless for keeping actual time across a power cycle (this is
+	 * why mainline's rtc-rtd119x.c, which drives it directly, always
+	 * reports 2014-01-01 after boot on this device). The vendor
+	 * firmware never actually uses it either: it persists the clock in
+	 * SPI-NOR flash instead (see &sfc and drivers/rtc/rtc-wd-mch-
+	 * flash.c). This node is intentionally left unbound; no driver
+	 * claims "realtek,rtd1295-rtc" here.
+	 */
+
+	rtc0: rtc {
+		compatible = "wd,mycloud-home-rtc";
 		status = "okay";
 	};
 };

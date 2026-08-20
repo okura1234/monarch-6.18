@@ -2011,6 +2011,15 @@ config RTC_DRV_RTD119X
 	  If you say yes here, you get support for the RTD1295 SoC
 	  Real Time Clock.
 
+config RTC_DRV_WD_MCH_FLASH
+	tristate "WD My Cloud Home flash-backed software RTC"
+	depends on MTD && (ARCH_REALTEK || COMPILE_TEST)
+	help
+	  WD My Cloud Home (Realtek RTD1295) has no battery-backed hardware
+	  RTC. The vendor firmware persists the clock as 8 bytes in a
+	  dedicated area of the boot SPI-NOR flash instead. Say y here to
+	  read/write the clock the same way.
+
 config RTC_DRV_ASPEED
 	tristate "ASPEED RTC"
 	depends on OF

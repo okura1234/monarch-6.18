@@ -6,6 +6,15 @@ config SPI_HISI_SFC
 	help
 	  This enables support for HiSilicon FMC SPI NOR flash controller.
 
+config SPI_RTK_SFC
+	tristate "Realtek RTD129x SPI NOR Flash Controller (SFC)"
+	depends on ARCH_REALTEK || COMPILE_TEST
+	depends on HAS_IOMEM
+	help
+	  This enables support for the Realtek RTD129x SPI-NOR flash
+	  controller (SFC), used for the boot SPI-NOR on RTD1295-based
+	  boards such as the WD My Cloud Home.
+
 config SPI_NXP_SPIFI
 	tristate "NXP SPI Flash Interface (SPIFI)"
 	depends on OF && (ARCH_LPC18XX || COMPILE_TEST)
