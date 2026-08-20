@@ -10,6 +10,20 @@
 
 /dts-v1/;
 
+/*
+ * Protect the USB-rescue-loader's ramdisk staging area (rescue.root.sata.
+ * cpio.gz_pad.img is loaded here, at the fixed address U-Boot's
+ * boot_rescue_from_usb script uses). Matches the vendor rescue DTS
+ * (rtd-1295-monarch-rescue.dts): ROOTFS_RESCUE_START/SIZE from
+ * include/soc/realtek/memory.h. Without this reservation and the
+ * chosen/linux,initrd-* properties below, the kernel never learns the
+ * ramdisk is there at all -- confirmed on real hardware: U-Boot's own FDT
+ * memreserve dump only lists 3 regions without this line (vs. 10 on a
+ * working 4.9.330 rescue boot), and the kernel panics with "Unable to
+ * mount root fs" instead of "Trying to unpack rootfs image as initramfs".
+ */
+/memreserve/ 0x02200000 0x00C00000;
+
 #include "rtd1295.dtsi"
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/reset/realtek,rtd1295.h>
@@ -42,6 +56,16 @@
 	chosen {
 		bootargs = "earlycon=uart8250,mmio32,0x98007800 console=ttyS0,115200 panic=5";
 		stdout-path = "serial0:115200n8";
+		/*
+		 * ROOTFS_RESCUE_START, see the /memreserve/ comment above.
+		 * End is start+4MB, not the full 12MB reservation: the
+		 * USB-rescue loader reads a fixed 4194304-byte block for
+		 * rescue.root.sata.cpio.gz_pad.img regardless of the real
+		 * gzip payload size (matches the working 4.9.330 rescue
+		 * boot log: "Freeing initrd memory: 4096K").
+		 */
+		linux,initrd-start = <0x02200000>;
+		linux,initrd-end = <0x02600000>;
 	};
 
 	/* Reserved memory - clean version without vendor rsvmem-remap overlaps */
