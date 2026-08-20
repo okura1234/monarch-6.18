@@ -1,6 +1,8 @@
 # Linux 6.18 for WD My Cloud Home (Realtek RTD1295 "Monarch")
 
-This tree is vanilla `v6.18` plus a board port for the WD My Cloud Home
+This tree is vanilla `v6.18.45` (rebased from the initial `v6.18` this port
+started on via a 3-way merge, `v6.18` as merge base — see "Updating the base
+version" below) plus a board port for the WD My Cloud Home
 (single-bay), a NAS built around Realtek's RTD1295 SoC. It replaces the
 vendor's stock kernel, `linux-4.9.330`, which shipped as GPL source at
 [symops/monarch-4.9.330](https://github.com/symops/monarch-4.9.330) — that
@@ -215,3 +217,65 @@ or a separate `rescue.root.sata.cpio.gz_pad.img` (gzip'd cpio,
 zero-padded to exactly 4194304 bytes regardless of real payload size —
 the loader reads that fixed block size unconditionally). Nothing on
 the board's own flash/disk is touched by this path.
+
+Three of this board's drivers — `phy-rtk-sata`, `usb-storage`, `uas` — are
+built as modules rather than built-in (see "Config" below), so the
+initramfs `init` script `insmod`s them explicitly by path before touching
+any `/dev/sd*` device; there's no `modprobe`/`depmod` in this minimal
+initramfs, so load order matters (`phy-rtk-sata` before `usb-storage`
+before `uas`, since `uas` depends on `usb-storage`). Because the SoC's
+`ahci_rtd1295` glue driver only finishes probing (and SATA link-up
+negotiation) after `phy-rtk-sata` is inserted, and this board's drive
+reliably takes several seconds to link, the `init` script also waits (up
+to 12s, polling `/sys/bus/scsi/devices/{1,2}:0:0:0` — `ahci_rtd1295`'s
+fixed SCSI host numbers, not tied to which `/dev/sd?` letter the kernel
+assigns) before scanning for a root filesystem; without this wait every
+boot fell through to Network Rescue Mode before the disk was even
+attached. **Never `strip -s` (strip-all) a `.ko` that needs to actually
+load** — it removes the symbol table the kernel's module loader parses to
+resolve relocations, so `insmod` fails with `EINVAL`/"invalid module
+format" even though the file looks fine otherwise; `strip --strip-debug`
+only drops debug sections and keeps modules loadable.
+
+## Config
+
+Compared to a bare `defconfig`, this port's `.config` also mirrors
+`monarch-4.9.330`'s module/built-in choices where applicable (matching
+features enabled there, and building as modules whatever it built as
+modules), plus a broad pass converting non-driver, non-boot-critical
+`=y` features to `=m` to shrink the built-in `Image`. A few things must
+stay built-in no matter what that pass's heuristics say, because the
+initramfs needs them before any module could be loaded: `EXT4_FS` (+
+`JBD2`, `FS_MBCACHE`), `VFAT_FS`, `NLS*`, the `DECOMPRESS_*`/`ZLIB_*`
+codecs, `CRC16`/`CRC32`, `PSTORE*`, `XZ_DEC` — and, learned the hard way,
+`BINFMT_SCRIPT` (needed to exec `/init`'s own `#!/bin/sh` line — without
+it the kernel panics with `Failed to execute /init (error -8)`) and
+`PACKET` (`AF_PACKET`, needed by `udhcpc` to send a `DHCPDISCOVER` at
+all — without it the initramfs's own network-rescue DHCP client fails
+immediately with `EAFNOSUPPORT`, before any module could be inserted to
+provide it).
+
+## Updating the base version
+
+To rebase this port onto a newer upstream point release (e.g.
+`v6.18.0` → `v6.18.45`), do a 3-way merge with the port's *original*
+base tag as the explicit merge base — this tree's initial commit is a
+content-squashed root with no real git parent link into
+`torvalds/linux` history, so a plain `git merge`/`git rebase` can't
+infer the right base on its own:
+
+```
+git fetch --filter=blob:none https://github.com/gregkh/linux.git tag v6.18.45
+TREE=$(git merge-tree --write-tree --merge-base=v6.18 HEAD v6.18.45^{commit})
+git commit-tree -p HEAD -p v6.18.45^{commit} -m "Merge upstream v6.18.45" $TREE
+git reset --hard <resulting-commit>
+```
+
+(`v6.18` here is a real tag reachable from this repo's `torvalds/linux`
+origin remote; the exact base tag this port started from is recorded in
+the first commit's message.) After rebasing, anything that bakes the
+kernel version string into a built artifact must be rebuilt and
+re-synced together, or `insmod` will reject the stale ones with a
+vermagic mismatch: the kernel `Image` itself, the three modules baked
+into the initramfs (`lib/modules/*.ko`), and the separate
+`rescue.root.sata.cpio.gz_pad.img` initrd if that path is also used.
