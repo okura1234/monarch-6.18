@@ -218,6 +218,19 @@ zero-padded to exactly 4194304 bytes regardless of real payload size —
 the loader reads that fixed block size unconditionally). Nothing on
 the board's own flash/disk is touched by this path.
 
+`initramfs/` (the `CONFIG_INITRAMFS_SOURCE` this tree's `.config` points
+at) is this rescue userspace: a minimal set of prebuilt static
+aarch64 binaries (`busybox`, `mdadm`, `libc`/`ld-linux`) plus the
+`init` script, originally from `Fireblossom/wd-mch-kernel`'s own
+initramfs (adopted like the rest of that community port, see above),
+with this port's own storage-module load-order/timing fixes on top
+(see below). `initramfs/lib/modules/*.ko` (the three modules `init`
+`insmod`s by hand) are **not** committed — they're kernel-version-tied
+build output, not source; run `tools/monarch/sync-storage-modules.sh`
+after `make modules` and before `make Image` to (re)populate them from
+the just-built tree, every time, including after a base-version rebase
+(see "Updating the base version" below).
+
 Three of this board's drivers — `phy-rtk-sata`, `usb-storage`, `uas` — are
 built as modules rather than built-in (see "Config" below), so the
 initramfs `init` script `insmod`s them explicitly by path before touching
@@ -276,6 +289,9 @@ origin remote; the exact base tag this port started from is recorded in
 the first commit's message.) After rebasing, anything that bakes the
 kernel version string into a built artifact must be rebuilt and
 re-synced together, or `insmod` will reject the stale ones with a
-vermagic mismatch: the kernel `Image` itself, the three modules baked
-into the initramfs (`lib/modules/*.ko`), and the separate
-`rescue.root.sata.cpio.gz_pad.img` initrd if that path is also used.
+vermagic mismatch: `make modules`, then
+`tools/monarch/sync-storage-modules.sh` to refresh
+`initramfs/lib/modules/*.ko`, *then* `make Image` (order matters — the
+initramfs is baked into `Image` at that step) — and the separate
+`rescue.root.sata.cpio.gz_pad.img` initrd, if that path is also used,
+needs re-packing from the same now-current `initramfs/` tree too.
