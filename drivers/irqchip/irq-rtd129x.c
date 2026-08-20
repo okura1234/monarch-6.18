@@ -109,12 +109,25 @@ static int __maybe_unused mux_set_affinity(struct irq_data *d,
 	struct irq_mux_data *mux_data = irq_data_get_irq_chip_data(d);
 	struct irq_chip *chip = irq_get_chip(mux_data->irq);
 	struct irq_data *data = irq_get_irq_data(mux_data->irq);
+	int ret;
 
-	if (chip && chip->irq_set_affinity)
-		return chip->irq_set_affinity(data, mask_val, force);
-	else
+	if (!chip || !chip->irq_set_affinity)
 		return -EINVAL;
 
+	ret = chip->irq_set_affinity(data, mask_val, force);
+	if (ret < 0)
+		return ret;
+
+	/*
+	 * All muxed IRQs on this mux instance share the same single parent
+	 * GIC line, so its effective affinity (whatever the delegated call
+	 * above just applied) applies equally to this virtual one -- genirq
+	 * warns ("did not update eff. affinity mask") if a chip returns
+	 * success from irq_set_affinity() without recording one.
+	 */
+	irq_data_update_effective_affinity(d, irq_data_get_effective_affinity_mask(data));
+
+	return ret;
 }
 #endif
 
