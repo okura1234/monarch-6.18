@@ -632,15 +632,24 @@
 		compatible = "pwm-leds";
 
 		/*
-		 * Front SYS LED, PWM channel 3. The boot loader leaves it at
-		 * 50 % duty, ~26 kHz; "keep" preserves that until userspace
-		 * changes brightness or attaches a trigger.
+		 * Front SYS LED, PWM channel 3. "keep" turned out to be the
+		 * wrong default: the raw pre-driver hardware state here is
+		 * just reset/BootROM leftovers (ocd=255 csd=15 cd=127 ->
+		 * ~1.6 Hz, visibly flickering), not something meaningful the
+		 * boot loader configured -- the vendor's own driver
+		 * unconditionally reprograms all 4 channels at probe
+		 * regardless of what it finds. Its logged defaults for this
+		 * channel (clksrc_div=1 clkout_div=255 duty_rate=10,
+		 * ~26367 Hz) are the actual known-good operating point;
+		 * default-brightness=26 (~10% of 255) reproduces that duty
+		 * cycle through this driver's apply().
 		 */
 		led-sys {
 			label = "white:sys";
 			pwms = <&pwm 3 37926>;
 			max-brightness = <255>;
-			default-state = "keep";
+			default-state = "on";
+			default-brightness = <26>;
 		};
 	};
 };
