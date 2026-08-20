@@ -335,6 +335,7 @@ enum {
 	/* return values for ->qc_defer */
 	ATA_DEFER_LINK		= 1,
 	ATA_DEFER_PORT		= 2,
+	ATA_DEFER_LINK_EXCL	= 3,
 
 	/* desc_len for ata_eh_info and context */
 	ATA_EH_DESC_LEN		= 80,
@@ -388,7 +389,7 @@ enum {
 	/* This should match the actual table size of
 	 * ata_eh_cmd_timeout_table in libata-eh.c.
 	 */
-	ATA_EH_CMD_TIMEOUT_TABLE_SIZE = 8,
+	ATA_EH_CMD_TIMEOUT_TABLE_SIZE = 9,
 
 	/*
 	 * Quirk flags: may be set by libata or controller drivers on drives.
@@ -853,6 +854,9 @@ struct ata_link {
 	unsigned int		sata_spd_limit;
 	unsigned int		sata_spd;	/* current SATA PHY speed */
 	enum ata_lpm_policy	lpm_policy;
+
+	struct work_struct	deferred_qc_work;
+	struct ata_queued_cmd	*deferred_qc;
 
 	/* record runtime error info, protected by host_set lock */
 	struct ata_eh_info	eh_info;
