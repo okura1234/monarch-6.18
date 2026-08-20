@@ -662,9 +662,14 @@
 };
 
 &crt {
-	scpu_clk: clock-controller@500 {
+	/*
+	 * No "reg" here: the two registers this clock touches (divider at
+	 * CRT offset 0x030, PLL/SSC1 control at 0x500+) are far apart in
+	 * the same block, so the driver reaches both through &crt's own
+	 * syscon regmap instead of owning a private MMIO sub-window.
+	 */
+	scpu_clk: clock-controller {
 		compatible = "realtek,rtd129x-scpu-clk";
-		reg = <0x500 0x20>;
 		clocks = <&osc27M>;
 		#clock-cells = <0>;
 	};
