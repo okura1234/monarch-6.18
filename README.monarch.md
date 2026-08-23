@@ -47,6 +47,16 @@ Three sources, in order of how much of each thing is used:
    reference for everything above, and as the direct source for the
    parts of (1) that needed genuinely new forward-porting.
 
+## Acknowledgments
+
+Thanks to [Fireblossom](https://github.com/Fireblossom) for
+[wd-mch-kernel](https://github.com/Fireblossom/wd-mch-kernel) — this
+port would have taken considerably longer without that existing 4.9→6.18
+groundwork to build on for SMP bring-up, GMAC Ethernet, USB dwc3/PHY,
+watchdog, thermal, IRQ mux, I2C, the MFD/regulator stack, the board DTS
+skeleton, and the rescue-userspace `init` script this port's own
+storage load-order fixes sit on top of.
+
 ## Change summary (relative to vanilla v6.18)
 
 ### Board
