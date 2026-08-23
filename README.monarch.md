@@ -268,6 +268,25 @@ all — without it the initramfs's own network-rescue DHCP client fails
 immediately with `EAFNOSUPPORT`, before any module could be inserted to
 provide it).
 
+**Docker/container support**: checked against upstream Docker's own
+`contrib/check-config.sh` requirements list. The baseline config
+already covered essentially everything in the "required" tier
+(namespaces, cgroups v1 controllers, veth/bridge/netfilter, NAT,
+POSIX_MQUEUE, etc.) and most of the nftables family already too
+(`NF_TABLES`, `NF_TABLES_INET`, `NFT_NAT`/`MASQ`/`REDIR`/`COMPAT`/
+`REJECT*`/`CT`/`LOG`/`LIMIT`/`HASH`/`NUMGEN`, all `=m`) — only a
+handful of genuinely-missing, genuinely-available options needed
+adding: `CGROUP_PERF` (bool, `=y`), `BTRFS_FS_POSIX_ACL` (bool, `=y`,
+`BTRFS_FS` was already `=m`), and as modules matching the existing
+`NF_TABLES=m` pattern: `NFT_FIB_IPV4`, `NFT_FIB_IPV6`, `NFT_FIB_INET`,
+`NFT_QUOTA`, `NFT_CONNLIMIT`, `IP_SCTP`. (A few other items the script
+checks -- `SECURITY_SELINUX`/`SECURITY_APPARMOR`, `DEVPTS_MULTIPLE_
+INSTANCES`, `IOSCHED_CFQ`, `NETPRIO_CGROUP` -- are either genuinely out
+of scope for this minimal embedded config or no longer exist as
+separate options on this kernel version; `CGROUP_NET_PRIO` already
+covers the modern equivalent of `NETPRIO_CGROUP`.) Not yet tested with
+an actual Docker/container workload on real hardware.
+
 ## Updating the base version
 
 To rebase this port onto a newer upstream point release (e.g.
