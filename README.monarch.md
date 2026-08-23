@@ -315,7 +315,15 @@ git reset --hard <resulting-commit>
 
 (`v6.18` here is a real tag reachable from this repo's `torvalds/linux`
 origin remote; the exact base tag this port started from is recorded in
-the first commit's message.) After rebasing, anything that bakes the
+the first commit's message.) **Important for every rebase *after* the
+first**: `--merge-base` must be the point release most recently merged
+in (e.g. `v6.18.45` when rebasing onto `v6.18.46`), not `v6.18` again --
+reusing the original base tag makes `git merge-tree` try to replay the
+entire upstream delta since `v6.18.0` a second time against a tree that
+already contains it, producing hundreds of bogus conflicts in files this
+port never touches (hit this rebasing to `v6.18.46`: conflicts in `drm`,
+`mptcp`, `xfs`, etc. that vanished once `--merge-base=v6.18.45` was used
+instead). After rebasing, anything that bakes the
 kernel version string into a built artifact must be rebuilt and
 re-synced together, or `insmod` will reject the stale ones with a
 vermagic mismatch: `make modules`, then
