@@ -228,6 +228,15 @@ zero-padded to exactly 4194304 bytes regardless of real payload size —
 the loader reads that fixed block size unconditionally). Nothing on
 the board's own flash/disk is touched by this path.
 
+The `usb-payload/` directory packaged for deployment also carries two
+files the rescue loader itself never reads, kept alongside for
+convenience when deploying the same build onto the full installed OS:
+`modules.tar.xz` (tarred from *inside* `INSTALL_MOD_PATH/lib/modules/`,
+i.e. `cd .../lib/modules && tar -cJf modules.tar.xz .`, so the archive
+root is `./6.18.4X+/...` — extracting with `tar -C /lib/modules -xf
+modules.tar.xz` lands the version directory directly at the right
+path) and `.config` (the exact `.config` this build was made from).
+
 `initramfs/` (the `CONFIG_INITRAMFS_SOURCE` this tree's `.config` points
 at) is this rescue userspace: a minimal set of prebuilt static
 aarch64 binaries (`busybox`, `mdadm`, `libc`/`ld-linux`) plus the
