@@ -109,6 +109,43 @@ static const unsigned int SSCDIS_SET_TABLE[] = {
 	0x538E0411, 0x538E4411, 0x538E8411,
 };
 
+/*
+ * SB2 bus-gate bits for this PHY instance. Without these open, the MDIO
+ * bus segment this PHY's MDIO_CTR/MDIO_CTR1/PHY_SPD registers sit behind
+ * doesn't respond: every readl() on it stalls (observed as several tens
+ * of ms per access -- not the driver's own udelay(10) polling interval,
+ * which is negligible in comparison) before eventually giving back a bus
+ * abort/poison pattern, and downstream AHCI HBA register reads on the
+ * same bus segment do the same (0xdeadbeef).
+ *
+ * The mainline phy framework calls phy_init() before phy_power_on() (see
+ * ahci_platform_enable_phys()), but phy_rtk_sata_init() below does all
+ * its MDIO_CTR programming -- this gate needs to already be open by
+ * then, not just by the time power_on() runs afterwards. Confirmed on
+ * real WD My Cloud Home Duo hardware where this gate isn't pre-opened by
+ * the bootloader (unlike this single-bay Monarch board, where it already
+ * was -- so this call is a no-op here in practice, but ported over from
+ * symops/pelican-6.18 for correctness and to keep the two ports'
+ * phy-rtk-sata.c byte-for-byte identical, matching the vendor 4.9.330
+ * source's non-RTD129X chip_id path, which does the same in both
+ * .init() and .power_on()): every one of the ~63 MDIO_CTR writes
+ * phy_rtk_sata_init() makes per PHY timed out and logged "mdio busy"
+ * (ignored -- see write_mdio_reg()) on Duo, stretching each PHY's init
+ * to ~3.3s, and the AHCI controller reset that follows failed outright
+ * with the same poison value.
+ */
+static void phy_rtk_sata_sb2_gate_open(struct phy_rtk_priv *priv, unsigned int index)
+{
+	u32 reg;
+
+	reg = readl(priv->sb2base);
+	if (index == 0)
+		reg |= BIT(0) | BIT(2) | BIT(4) | BIT(8);
+	else
+		reg |= BIT(1) | BIT(3) | BIT(5);
+	writel(reg, priv->sb2base);
+}
+
 static int write_mdio_reg(u32 value, void __iomem *address)
 {
 	unsigned int cnt = 0;
@@ -149,6 +186,11 @@ static int phy_rtk_sata_init(struct phy *phy)
 	unsigned int size;
 	int i;
 
+	/* Must happen before any MDIO_CTR access below -- see the comment
+	 * above phy_rtk_sata_sb2_gate_open().
+	 */
+	phy_rtk_sata_sb2_gate_open(priv, desc->index);
+
 	/* select PHY instance */
 	writel(desc->index, base + MDIO_CTR1);
 
@@ -186,7 +228,6 @@ static int phy_rtk_sata_power_on(struct phy *phy)
 {
 	struct phy_rtk_desc *desc = phy_get_drvdata(phy);
 	struct phy_rtk_priv *priv = dev_get_drvdata(phy->dev.parent);
-	u32 reg;
 	int i;
 
 	for (i = 0; i < PHY_MAX_RST; i++) {
@@ -195,13 +236,7 @@ static int phy_rtk_sata_power_on(struct phy *phy)
 		reset_control_deassert(desc->rsts[i]);
 	}
 
-	/* vendor: gate bits in SB2 for RTD129x */
-	reg = readl(priv->sb2base);
-	if (desc->index == 0)
-		reg |= BIT(0) | BIT(2) | BIT(4) | BIT(8);
-	else
-		reg |= BIT(1) | BIT(3) | BIT(5);
-	writel(reg, priv->sb2base);
+	phy_rtk_sata_sb2_gate_open(priv, desc->index);
 
 	return 0;
 }

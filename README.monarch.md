@@ -94,7 +94,16 @@ storage load-order fixes sit on top of.
 - `drivers/phy/realtek/phy-rtk-sata.c` — SATA PHY, already written
   against the modern generic PHY framework (`devm_phy_create()`) in
   the vendor tree, so this forward-port only needed API-surface
-  updates, not a rewrite.
+  updates, not a rewrite. Also opens the SB2 bus gate at the top of
+  `.init()` (via `phy_rtk_sata_sb2_gate_open()`), not just in
+  `.power_on()` — a no-op here in practice (this board's bootloader
+  already has the gate open by the time Linux runs), backported from
+  symops/pelican-6.18 for byte-for-byte `phy-rtk-sata.ko` parity
+  between the two ports (confirmed: identical size and md5) after a
+  real source diff turned up the difference. See that repo's
+  README.pelican.md for why Duo actually needs this call (its
+  bootloader leaves the gate closed on a cold boot, unlike this
+  board's).
 - `drivers/mtd/spi-nor/controllers/rtk-sfc.c` (new) — the boot SPI-NOR
   controller, forward-ported to `spi_nor_controller_ops`. Its RDID
   register read is the one genuinely hardware-quirky part: the whole
