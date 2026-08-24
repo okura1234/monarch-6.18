@@ -91,6 +91,20 @@ storage load-order fixes sit on top of.
   because they live in unrelated reset/clock domains. This one bit was
   the actual root cause after several other SATA-link-down leads
   (calibration tables, GPIO, timing) turned out to be red herrings.
+  **Deliberately left source-divergent from symops/pelican-6.18's
+  version of this file** (audited 2026-08-25, alongside every other
+  driver shared between the two ports -- everything else came back
+  byte-for-byte identical). Duo's copy was rewritten into a table-driven
+  `ahci_rtd1295_port_quirk[]` structure that also enables the SATA
+  clock-gate (CRT+0x0C) under a shared `rtd129x_crt_lock` and deasserts
+  `SATA_n`/`SATA_PHY_n` (not just `SATA_PHY_POW_n`) per port -- none of
+  which this board's driver does. Not a missed fix: this board's
+  `SATA_n`/`SATA_PHY_n`/clock-gate bits are already correct by the time
+  Linux boots (confirmed via `devmem` -- see git history), unlike Duo's
+  cold eMMC-boot path where they aren't. Both versions are independently
+  proven on their own real hardware; rewriting this one to match would
+  touch a boot-critical driver with no bug driving the change, so it's
+  being kept as-is rather than unified for source-parity's own sake.
 - `drivers/phy/realtek/phy-rtk-sata.c` — SATA PHY, already written
   against the modern generic PHY framework (`devm_phy_create()`) in
   the vendor tree, so this forward-port only needed API-surface
