@@ -103,7 +103,10 @@ storage load-order fixes sit on top of.
   real source diff turned up the difference. See that repo's
   README.pelican.md for why Duo actually needs this call (its
   bootloader leaves the gate closed on a cold boot, unlike this
-  board's).
+  board's). **Confirmed on real hardware, no regression**: clean boot,
+  `init phy0 OK` with no `mdio busy` stalls, `ata1: SATA link up 3.0
+  Gbps`, drive identified/partitioned, full boot to shell — as
+  expected, since the gate was already open here.
 - `drivers/mtd/spi-nor/controllers/rtk-sfc.c` (new) — the boot SPI-NOR
   controller, forward-ported to `spi_nor_controller_ops`. Its RDID
   register read is the one genuinely hardware-quirky part: the whole
