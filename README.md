@@ -115,7 +115,7 @@ storage load-order fixes sit on top of.
   symops/pelican-6.18 for byte-for-byte `phy-rtk-sata.ko` parity
   between the two ports (confirmed: identical size and md5) after a
   real source diff turned up the difference. See that repo's
-  README.pelican.md for why Duo actually needs this call (its
+  README.md for why Duo actually needs this call (its
   bootloader leaves the gate closed on a cold boot, unlike this
   board's). **Confirmed on real hardware, no regression**: clean boot,
   `init phy0 OK` with no `mdio busy` stalls, `ata1: SATA link up 3.0

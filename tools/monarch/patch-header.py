@@ -6,12 +6,12 @@ image header's own text_offset field -- for a normal relocatable arm64
 Image (text_offset=0), that means "copy it on top of itself at 0x0",
 which is silent, total, undebuggable failure: no console output at all,
 not even a bootloader error. This was mistaken for a kernel-size limit
-for a long time (see README.monarch.md) before the real cause was found.
+for a long time (see README.md) before the real cause was found.
 
 Usage: patch-header.py arch/arm64/boot/Image
 Run this on every rebuilt Image before packaging it for the board,
 raw (never gzip -- this loader's built-in gzip decompression is
-unreliable above a few MB, see README.monarch.md).
+unreliable above a few MB, see README.md).
 """
 import struct
 import sys
