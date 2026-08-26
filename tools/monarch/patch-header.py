@@ -6,14 +6,14 @@ image header's own text_offset field -- for a normal relocatable arm64
 Image (text_offset=0), that means "copy it on top of itself at 0x0",
 which is silent, total, undebuggable failure: no console output at all,
 not even a bootloader error. This was mistaken for a kernel-size limit
-for a long time (see README.md) before the real cause was found.
+for a long time before the real cause was found.
 
 Usage: patch-header.py arch/arm64/boot/Image
 Run this on every rebuilt Image before packaging it for the board.
-Package the patched Image with gzip (pigz -11) into sata.uImage --
-despite an earlier note here cautioning against gzip above a few MB,
-this loader's rescue path has since been confirmed on real hardware
-handling a gzip'd Image at the sizes this port actually produces.
+Package the patched Image with gzip (pigz -11) -- despite an earlier
+note here cautioning against gzip above a few MB, this loader's rescue
+path has since been confirmed on real hardware handling a gzip'd Image
+at the sizes this port actually produces.
 """
 import struct
 import sys
