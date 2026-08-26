@@ -8,6 +8,7 @@
  *  Copyright (C) 1998-2024  Ingo Molnar, Red Hat
  */
 #define INSTANTIATE_EXPORTED_MIGRATE_DISABLE
+#include <linux/cma.h>
 #include <linux/sched.h>
 #include <linux/highmem.h>
 #include <linux/hrtimer_api.h>
@@ -1104,6 +1105,17 @@ static void __resched_curr(struct rq *rq, int tif)
 	struct task_struct *curr = rq->curr;
 	struct thread_info *cti = task_thread_info(curr);
 	int cpu;
+
+	/*
+	 * WD My Cloud Home AHCI CPU0-interrupt-loss hang workaround, ported
+	 * from the sibling Duo board port (symops/pelican-6.18, see its
+	 * README.md): an unconditional counter here, incremented on every
+	 * reschedule system-wide, empirically reduced how often the
+	 * hang-triggering condition occurred on Duo hardware. Applied here
+	 * as a precaution, not because the bug has been directly observed
+	 * on Monarch. No lock involved.
+	 */
+	cma_diag_race_shift_calls++;
 
 	lockdep_assert_rq_held(rq);
 

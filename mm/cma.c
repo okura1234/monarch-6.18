@@ -33,6 +33,14 @@
 #include "internal.h"
 #include "cma.h"
 
+/*
+ * WD My Cloud Home AHCI CPU0-interrupt-loss hang workaround, ported from
+ * the sibling Duo board port (symops/pelican-6.18, see its README.md).
+ * Backs the unconditional counter in kernel/sched/core.c's
+ * __resched_curr().
+ */
+unsigned long cma_diag_race_shift_calls;
+
 struct cma cma_areas[MAX_CMA_AREAS];
 unsigned int cma_area_count;
 

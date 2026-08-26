@@ -5,6 +5,7 @@
  * DMA operations that map physical memory directly without using an IOMMU.
  */
 #include <linux/memblock.h> /* for max_pfn */
+#include <linux/delay.h>
 #include <linux/export.h>
 #include <linux/mm.h>
 #include <linux/dma-map-ops.h>
@@ -249,6 +250,20 @@ void *dma_direct_alloc(struct device *dev, size_t size,
 	if ((remap || force_dma_unencrypted(dev)) &&
 	    dma_direct_use_pool(dev, gfp))
 		return dma_direct_alloc_from_pool(dev, size, dma_handle, gfp);
+
+	/*
+	 * WD My Cloud Home AHCI CPU0-interrupt-loss hang workaround, ported
+	 * from the sibling Duo board port (symops/pelican-6.18, see its
+	 * README.md, "AHCI CPU0-interrupt-loss hang investigation"): a
+	 * deliberate delay before this device's first dma_alloc_coherent()
+	 * call empirically reduced how often the hang-triggering condition
+	 * occurred on Duo hardware. Applied here as a precaution -- Monarch
+	 * shares the same RTD1295/1296 SoC family and spin-table CPU
+	 * hotplug limitation that made the underlying bug possible, even
+	 * though it has not been directly observed on Monarch hardware.
+	 */
+	if (!strcmp(dev_name(dev), "9803f000.sata"))
+		usleep_range(500000, 1000000);
 
 	/* we always manually zero the memory once we are done */
 	page = __dma_direct_alloc_pages(dev, size, gfp & ~__GFP_ZERO, true);
