@@ -252,15 +252,18 @@ void *dma_direct_alloc(struct device *dev, size_t size,
 		return dma_direct_alloc_from_pool(dev, size, dma_handle, gfp);
 
 	/*
-	 * WD My Cloud Home AHCI CPU0-interrupt-loss hang workaround, ported
-	 * from the sibling Duo board port (symops/pelican-6.18, see its
-	 * README.md, "AHCI CPU0-interrupt-loss hang investigation"): a
-	 * deliberate delay before this device's first dma_alloc_coherent()
-	 * call empirically reduced how often the hang-triggering condition
-	 * occurred on Duo hardware. Applied here as a precaution -- Monarch
-	 * shares the same RTD1295/1296 SoC family and spin-table CPU
-	 * hotplug limitation that made the underlying bug possible, even
-	 * though it has not been directly observed on Monarch hardware.
+	 * AHCI CPU0-interrupt-loss hang workaround, shared between two board
+	 * ports: symops/pelican-6.18 (WD My Cloud Home Duo, dual-bay,
+	 * RTD1296) and symops/monarch-6.18 (WD My Cloud Home, single-bay,
+	 * RTD1295) -- see pelican-6.18's README.md, "AHCI CPU0-interrupt-loss
+	 * hang investigation". A deliberate delay before this device's first
+	 * dma_alloc_coherent() call empirically reduced how often the
+	 * hang-triggering condition occurred on Duo hardware, where the bug
+	 * was found and confirmed; applied to Monarch as a precaution, since
+	 * it shares the same RTD1295/1296 SoC family and spin-table CPU
+	 * hotplug limitation that made the bug possible, even though it has
+	 * not been directly observed there. Verified not to break Monarch's
+	 * own boot/functionality.
 	 */
 	if (!strcmp(dev_name(dev), "9803f000.sata"))
 		usleep_range(500000, 1000000);

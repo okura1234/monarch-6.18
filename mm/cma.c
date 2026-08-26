@@ -34,10 +34,10 @@
 #include "cma.h"
 
 /*
- * WD My Cloud Home AHCI CPU0-interrupt-loss hang workaround, ported from
- * the sibling Duo board port (symops/pelican-6.18, see its README.md).
- * Backs the unconditional counter in kernel/sched/core.c's
- * __resched_curr().
+ * AHCI CPU0-interrupt-loss hang workaround, shared between
+ * symops/pelican-6.18 (WD My Cloud Home Duo) and symops/monarch-6.18
+ * (WD My Cloud Home) -- see pelican-6.18's README.md. Backs the
+ * unconditional counter in kernel/sched/core.c's __resched_curr().
  */
 unsigned long cma_diag_race_shift_calls;
 
