@@ -25,6 +25,8 @@
 /memreserve/ 0x02200000 0x00C00000;
 
 #include "rtd1295.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/reset/realtek,rtd1295.h>
 
@@ -222,6 +224,38 @@
 		status = "okay";
 		#address-cells = <1>;
 		#size-cells = <0>;
+	};
+
+	/*
+	 * ISO_GPIO block -- mainline drivers/gpio/gpio-rtd.c
+	 * ("realtek,rtd1295-iso-gpio"), ported from symops/pelican-6.18's
+	 * Duo board (same RTD129x-family register layout, same driver, same
+	 * mux_intc bank/bit -- see that repo's
+	 * rtd1296-wd-mycloud-home-duo.dts for the full derivation of the
+	 * reg/interrupts values below, cross-checked here against this
+	 * board's own vendor rtd-1295.dtsi rtk_iso_gpio node, which is
+	 * identical to Duo's on every field that matters (gpio_base=101,
+	 * gpio_numbers=35, mux bank 1 bits 19/20, ISO_GPIO@98007100 /
+	 * ISO_SYS@98007000).
+	 *
+	 * reg[1] is 0x10 bytes, not the vendor's full 0x100-byte page, for
+	 * the exact same reason as Duo: that page (&iso, syscon@7000 in
+	 * rtd129x.dtsi) is shared with already-working peripherals at their
+	 * own small sub-ranges -- pwm@d0 (this board's SYS LED and fan) and
+	 * iso_reset@88 -- and claiming the vendor's full reg size here
+	 * broke both of those with "-EBUSY: can't request region" on real
+	 * Duo hardware before being caught and fixed there. 0x10 bytes
+	 * covers only gpa_offset[0]=0x8/gpda_offset[0]=0xc (bank 0, GPIOs
+	 * 0-30), same as Duo.
+	 */
+	rtk_iso_gpio: gpio@7100 {
+		compatible = "realtek,rtd1295-iso-gpio";
+		reg = <0x7100 0x100>, <0x7000 0x10>;
+		interrupt-parent = <&mux_intc>;
+		interrupts = <1 19>, <1 20>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		status = "okay";
 	};
 
 	/*
@@ -650,6 +684,34 @@
 			max-brightness = <255>;
 			default-state = "on";
 			default-brightness = <26>;
+		};
+	};
+
+	/*
+	 * Reset button, ported from symops/pelican-6.18's Duo board -- see
+	 * that repo's rtd1296-wd-mycloud-home-duo.dts for the full story
+	 * (MCG1-6.18 analogy, real IRQ vs. MCG1's forced polling, and why
+	 * the vendor's power-management wakeup-gpio-list is not a reliable
+	 * lead for which GPIO this is).
+	 *
+	 * GPIO 34, confirmed on real Monarch hardware the same way Duo's
+	 * GPIO 20 was: `gpioget -c gpiochip0 <all 34 other lines>` run once
+	 * unpressed and once with the button held, diffing the two dumps.
+	 * Exactly one line flipped, active -> inactive, between the two
+	 * reads. Neither of this board's own vendor wakeup-gpio-list
+	 * candidates (GPIO 14 or 33, rtd-1295-monarch-1GB.dts -- both
+	 * marked disabled there, wakeup-gpio-enable = <0>, <0>;) was it;
+	 * 33 was close but wrong, same as Duo's list pointing at 22 instead
+	 * of the real 20. This list is evidently not a reliable lead on
+	 * either board.
+	 */
+	gpio_keys: gpio-keys {
+		compatible = "gpio-keys";
+
+		button-reset {
+			label = "Reset";
+			linux,code = <KEY_PROG1>;
+			gpios = <&rtk_iso_gpio 34 GPIO_ACTIVE_LOW>;
 		};
 	};
 };
