@@ -335,35 +335,99 @@ an actual Docker/container workload on real hardware.
 ## Updating the base version
 
 To rebase this port onto a newer upstream point release (e.g.
-`v6.18.0` → `v6.18.45`), do a 3-way merge with the port's *original*
-base tag as the explicit merge base — this tree's initial commit is a
-content-squashed root with no real git parent link into
-`torvalds/linux` history, so a plain `git merge`/`git rebase` can't
-infer the right base on its own:
+`v6.18.46` → `v6.18.50`), do a 3-way merge with the port's most
+recently merged-in point release as the explicit merge base — this
+tree's initial commit is a content-squashed root with no real git
+parent link into upstream history, so a plain `git merge`/`git rebase`
+can't infer the right base on its own.
+
+**Step 0 — fetch the real upstream tags under aliases, never bare.**
+Both this repo and the sibling `symops/pelican-6.18` have, at various
+points, moved their own local `vX.Y.Z` tag to point at a *release*
+commit of their own (for GitHub Releases) — meaning the bare tag name
+`v6.18.46` in this repo's local clone does **not** point at the real
+upstream `v6.18.46` commit, it points at one of our own commits with
+that same name reused. Trusting it as `--merge-base` silently produces
+a nonsense diff (every file this port ever touched looks "deleted" in
+the new upstream tag, because `git merge-tree` is diffing against our
+own tree instead of upstream's). Always fetch upstream tags under a
+name that cannot collide, and verify before using one:
 
 ```
-git fetch --filter=blob:none https://github.com/gregkh/linux.git tag v6.18.45
-TREE=$(git merge-tree --write-tree --merge-base=v6.18 HEAD v6.18.45^{commit})
-git commit-tree -p HEAD -p v6.18.45^{commit} -m "Merge upstream v6.18.45" $TREE
+git fetch --filter=blob:none \
+    https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git \
+    v6.18.46:refs/tags/upstream-v6.18.46
+git cat-file -e upstream-v6.18.46:drivers/phy/realtek/phy-rtk-sata.c \
+    && echo "BUG: this is OUR tag, not upstream's" \
+    || echo "OK: genuine upstream tree, no board-port files"
+```
+
+(use `git.kernel.org`'s stable tree, not `github.com/gregkh/linux` —
+the GitHub mirror lags behind by up to one point release and may not
+have the newest tag yet.)
+
+**Step 1 — compute and land the merge.**
+
+```
+git fetch --filter=blob:none \
+    https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git \
+    tag v6.18.50
+TREE=$(git merge-tree --write-tree --merge-base=upstream-v6.18.46 HEAD v6.18.50^{commit})
+git commit-tree -p HEAD -m "Merge upstream v6.18.50" $TREE
 git reset --hard <resulting-commit>
 ```
 
-(`v6.18` here is a real tag reachable from this repo's `torvalds/linux`
-origin remote; the exact base tag this port started from is recorded in
-the first commit's message.) **Important for every rebase *after* the
-first**: `--merge-base` must be the point release most recently merged
-in (e.g. `v6.18.45` when rebasing onto `v6.18.46`), not `v6.18` again --
-reusing the original base tag makes `git merge-tree` try to replay the
-entire upstream delta since `v6.18.0` a second time against a tree that
-already contains it, producing hundreds of bogus conflicts in files this
-port never touches (hit this rebasing to `v6.18.46`: conflicts in `drm`,
-`mptcp`, `xfs`, etc. that vanished once `--merge-base=v6.18.45` was used
-instead). After rebasing, anything that bakes the
-kernel version string into a built artifact must be rebuilt and
-re-synced together, or `insmod` will reject the stale ones with a
-vermagic mismatch: `make modules`, then
-`tools/monarch/sync-storage-modules.sh` to refresh
-`initramfs/lib/modules/*.ko`, *then* `make Image` (order matters — the
-initramfs is baked into `Image` at that step) — and the separate
+Note the single `-p HEAD` — **do not** also pass `-p v6.18.50^{commit}`
+as a second parent, even though that is what a normal `git merge`
+commit would record and what an earlier version of this section
+recommended. Actually attaching the real upstream commit as a git
+parent links this repo's history into upstream's, and pushing that
+choked outright on both this repo and pelican-6.18 with `remote: fatal:
+did not receive expected object <sha>` / `index-pack failed` — traced
+to a phantom object in the local (partial-clone) object store that
+was reachable from no ref and present in no local pack, yet kept
+getting pulled into the push by git's own pack-generation logic once
+upstream's real ancestry was reachable from the commit being pushed.
+`git backfill`, `--refetch`, `--no-thin`, and `verify-pack` all failed
+to resolve or route around it. A single-parent commit produces the
+exact same tree/content (this repo's own design already never carries
+real upstream git history anyway — see `symops/MCG1-6.18`'s README,
+"squashed baseline commit importing linux-stable" — so not literally
+attaching the upstream commit as a parent is arguably *more*
+consistent with that design, not less) and only ever needs to push the
+actual content delta, never upstream's ancestry graph.
+
+**Important for every rebase *after* the first**: `--merge-base` must
+be the point release most recently merged in (e.g. `v6.18.46` when
+rebasing onto `v6.18.50`, fetched under its own `upstream-v6.18.46`
+alias per Step 0), not the port's original base tag again — reusing an
+older base tag makes `git merge-tree` try to replay the entire
+upstream delta since that point a second time against a tree that
+already contains it, producing hundreds of bogus conflicts in files
+this port never touches.
+
+**Step 2 — rebuild and re-sync everything that bakes in the version
+string.** A version bump always changes `UTS_RELEASE`, so anything
+built before it (`Image`, modules, the vermagic strings inside them)
+is now stale and must be rebuilt together, or `insmod` will reject the
+old ones with a vermagic mismatch. Also pass `LOCALVERSION=` (empty,
+but explicitly set) on every `make` invocation below: without it,
+`scripts/setlocalversion` appends a bare `+` to the release string for
+any commit that isn't itself exactly a tagged upstream release —
+i.e. always, for this port — producing kernel/module strings like
+`6.18.50+` instead of the clean `6.18.50` this project wants (see
+`scripts/setlocalversion`'s own `LOCALVERSION` handling for why: it
+only suppresses the `+` when the make variable is *set*, even to
+empty, not when `CONFIG_LOCALVERSION_AUTO` happens to be off).
+
+```
+make LOCALVERSION= Image modules dtbs
+tools/monarch/sync-storage-modules.sh
+make LOCALVERSION= modules_install INSTALL_MOD_PATH=<staging dir>
+```
+
+`sync-storage-modules.sh` refreshes `initramfs/lib/modules/*.ko`
+*before* the next `make Image` in this same invocation (order matters
+— the initramfs is baked into `Image` at that step); the separate
 `rescue.root.sata.cpio.gz_pad.img` initrd, if that path is also used,
 needs re-packing from the same now-current `initramfs/` tree too.
