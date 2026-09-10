@@ -259,6 +259,37 @@
 	};
 
 	/*
+	 * Cosmetic power-off -- see drivers/power/reset/wdmc-poweroff.c for
+	 * the full story on why this isn't a real power cut. reg[0] is the
+	 * pwm@d0 block's own OCD register (4 bytes, all 4 channels packed
+	 * into one word -- see that node's own comment on why this can't be
+	 * an exclusive devm_platform_ioremap_resource() claim).
+	 *
+	 * USB VBUS: identified from a captured *stock-firmware* boot log of
+	 * this exact physical unit (rtk_usb_manager: power-gpio id=19 for
+	 * port0, id=102 for port1+port2 sharing one physical port -- global
+	 * Linux gpio numbers; misc-gpio's own gpio_base=0/101 lines and
+	 * rtk_iso_gpio's gpio_base=101/35 lines, both confirmed in the
+	 * vendor's rtd-1295.dtsi, put those at misc-gpio bit 19 directly and
+	 * rtk_iso_gpio local line 1 respectively). Unlike Duo (both ports on
+	 * rtk_iso_gpio), Monarch's stock split lands one port on misc-gpio,
+	 * which has no mainline gpiolib controller in this port -- reg[1]/
+	 * reg[2] (DATO/DIR) plus wd,misc-gpio-vbus-bit are the raw-MMIO path
+	 * for that one bit; rtk_iso_gpio line 1 is a normal gpiod consumer,
+	 * same as Duo's lines. Not yet hardware-tested on Monarch (Duo's
+	 * equivalent needed a several-second hold, not a brief pulse, to
+	 * show any effect at all -- see wdmc-poweroff.c's header comment).
+	 */
+	poweroff: poweroff@70d0 {
+		compatible = "wd,mycloud-home-poweroff";
+		reg = <0x70d0 0x4>, <0x1b110 0x4>, <0x1b100 0x4>;
+		wd,pwm-off-channels = <3>; /* SYS LED only -- no fan on Monarch */
+		wd,misc-gpio-vbus-bit = <19>;
+		wd,usb-vbus-gpios = <&rtk_iso_gpio 1 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	/*
 	 * SATA PHY + AHCI controller.
 	 * PHY driver: drivers/phy/realtek/phy-rtk-sata.c (mainline)
 	 * AHCI reg shrunk to 0xf00 to avoid overlap with PHY at 0x3ff00.
@@ -653,14 +684,6 @@
 	};
 };
 
-/*
- * The poweroff driver maps the RPC common region uncached (as the vendor
- * kernel did); no-map keeps it out of the linear map so ioremap allows it.
- */
-&rpc_comm {
-	no-map;
-};
-
 / {
 	leds {
 		compatible = "pwm-leds";
@@ -713,13 +736,6 @@
 			linux,code = <KEY_PROG1>;
 			gpios = <&rtk_iso_gpio 34 GPIO_ACTIVE_LOW>;
 		};
-	};
-};
-
-/ {
-	poweroff {
-		compatible = "realtek,rtd129x-coolboot-poweroff";
-		memory-region = <&rpc_comm>;
 	};
 };
 
