@@ -1,6 +1,6 @@
 # Linux 6.18 for WD My Cloud Home (Realtek RTD1295 "Monarch")
 
-This tree is vanilla `v6.18.45` (rebased from the initial `v6.18` this port
+This tree is vanilla `v6.18.51` (rebased from the initial `v6.18` this port
 started on via a 3-way merge, `v6.18` as merge base — see "Updating the base
 version" below) plus a board port for the WD My Cloud Home
 (single-bay), a NAS built around Realtek's RTD1295 SoC. It replaces the
@@ -218,6 +218,61 @@ I2C PMIC. The I2C/regulator stack builds and is wired into the DTS but
 does not currently probe successfully — not investigated further since
 nothing on this board depends on it (the vendor boot log shows it
 initializing, but the board runs fine without it).
+
+## Progress log
+
+### Cosmetic poweroff driver (`drivers/power/reset/wdmc-poweroff.c`) — LED, HDD, USB VBUS
+
+Neither mainline nor the vendor 4.9.330 source implements a real
+hardware power-off for this board (no board-level 12V power-hold GPIO
+exists in either board's vendor DTS), so `halt`/`poweroff` used to just
+park the CPU with the board still fully powered: SYS LED lit, USB VBUS
+live, disks still spinning. The old board DTS carried a
+`realtek,rtd129x-coolboot-poweroff` node left over from the community
+port, but that compatible string matches no driver anywhere, mainline
+or vendor — confirmed by grepping both GPL source drops directly. New
+`wdmc-poweroff.c` driver (shared verbatim with symops/pelican-6.18)
+quiets everything actually under this SoC's control at shutdown time:
+
+- **SYS LED**: turns off the PWM channel's OCD register directly (same
+  effect as `pwm_disable()`, reached by a raw `devm_ioremap()` poke
+  since the `pwm@d0` block is already exclusively owned by the real
+  `pwm-rtd129x.c` driver).
+- **HDD spin-down**: already worked via the existing SCSI
+  `manage_shutdown` sysfs attribute (enabled via udev at boot) — not
+  reimplemented, just confirmed working alongside the new driver.
+- **USB VBUS**: the hard part. A misc-gpio raw-MMIO poke matching what
+  a rescue initramfs's own boot-time VBUS-enable step does was tried
+  first and *exhaustively disproven* on real Duo hardware (every bit of
+  misc-gpio, both 32-bit banks, and every `rtk_iso_gpio` line swept
+  with zero effect) — until it turned out a brief 1-second hold on a
+  candidate line shows no effect at all even on a genuinely correct
+  line; the actual working duration is several seconds. The real fix
+  only came from reading the vendor's own `rtk_usb_manager.c` driver
+  against a captured **stock-firmware boot log from this exact
+  physical unit** (`mch-debian-4.2.2.log`) rather than the generic
+  reference-board DTS, which lists a different, incomplete GPIO set
+  than retail firmware actually uses. Confirmed assignment for this
+  board: `misc-gpio` bit 19 (port0, raw MMIO — misc-gpio has no
+  mainline gpiolib controller in this port) and `rtk_iso_gpio` line 1
+  (port1+port2, sharing one physical USB port, a normal gpiod
+  consumer). **Confirmed on real hardware.**
+
+**Status: confirmed working, both boards** (Duo's own two ports are on
+different `rtk_iso_gpio` lines entirely — see symops/pelican-6.18's
+README for that board's assignment and the full discovery
+methodology).
+
+### Base version bump: v6.18.46 → v6.18.51
+
+Rebased onto the latest upstream stable point release following this
+file's "Updating the base version" procedure (single-parent
+`commit-tree`, upstream tags fetched under non-colliding aliases). The
+`v6.18.50 → v6.18.51` merge was clean — no conflicts, none of this
+port's own files touched by the upstream delta. Rebuilt
+`Image`/`dtbs`/`modules` with `LOCALVERSION=` and repackaged; **confirmed
+booting and working on real hardware** (alongside the poweroff driver
+above, same test).
 
 ## Building and booting
 
