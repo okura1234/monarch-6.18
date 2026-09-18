@@ -274,6 +274,31 @@ port's own files touched by the upstream delta. Rebuilt
 booting and working on real hardware** (alongside the poweroff driver
 above, same test).
 
+### Base version bump: v6.18.51 → v6.18.52, and the CPU0-hang workaround update
+
+Rebased onto v6.18.52 the same way — clean merge, no conflicts. On
+Duo, this bump made the shared CPU0-interrupt-loss hang (see
+symops/pelican-6.18's README.md, "Base version bump: v6.18.45 →
+v6.18.46") reproduce on every boot instead of intermittently. A full
+bisection there (see pelican-6.18's README.md, "Base version bump:
+v6.18.51 → v6.18.52, and the CPU0-hang regression") traced this to an
+upstream commit whose only effect on either board is an incidental
+~4 KiB shift in kernel image layout — the underlying race itself
+predates this bump and was never root-caused, on either board.
+
+The previous delay+counter workaround (`usleep_range()` in
+`kernel/dma/direct.c`'s `dma_direct_alloc()`, plus a counter in
+`kernel/sched/core.c`'s `__resched_curr()`) stopped being effective at
+v6.18.52's layout on Duo. Replaced with 100 no-op instructions right
+before `do_idle()`'s idle loop (`kernel/sched/idle.c`) — same
+empirical, layout-perturbation-only nature as what it replaces, not an
+understood fix. Ported here identically and, unlike the delay+counter
+workaround this port carried for months without ever seeing the bug
+directly, **this time confirmed working on real Monarch hardware**
+(back-to-back clean boots), not just applied as a defensive port.
+Negligible cost: ~100 cycles once per `do_idle()` entry, idle path
+only.
+
 ## Building and booting
 
 This board's U-Boot (`2015.07`, `Realtek QA Board`, 2016 build) has two
