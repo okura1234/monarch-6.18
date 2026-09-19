@@ -268,18 +268,32 @@
 		status = "okay";
 	};
 
-	/* run21: misc GPIO controller (0x9801b100 = rbus offset 0x1b100).
+	/* misc GPIO controller (0x9801b100 = rbus offset 0x1b100).
 	 * Same driver as rtk_iso_gpio (gpio-rtd.c: realtek,rtd1295-misc-gpio),
-	 * 101 GPIOs (gpio_base=0). reg[1] deliberately shrunk to 0x10 bytes,
-	 * mirroring rtk_iso_gpio above, to avoid -EBUSY against mux_intc's
-	 * own <0x1b000 0x100> claim on the same window.
-	 * NOT yet wired to any consumer (LED/rfkill/SATA-power nodes) --
-	 * added standalone first per Fable advisory to check for register
-	 * contention before adding consumers.
+	 * 101 GPIOs (gpio_base=0).
+	 *
+	 * reg[1] MUST be 0x100, not the 0x10 used by rtk_iso_gpio above.
+	 * The iso analogy does not hold: gpio-rtd.c's misc table puts the
+	 * per-bank IRQ registers at gpa_offset = {0x40,0x44,0xa4,0xb8} /
+	 * gpda_offset = {0x54,0x58,0xa8,0xbc}, whereas iso only needs
+	 * gpa[0]=0x8 / gpda[0]=0xc -- so 0x10 leaves *every* misc bank out
+	 * of range, bank 0 included. run21 shipped 0x10 and appeared to
+	 * work only because ioremap is page-granular (0x1b000-0x1bfff is
+	 * one page), so the out-of-bounds accesses went through silently;
+	 * that would have become a real OOB access the moment a GPIO
+	 * interrupt consumer (gpio-keys, rfkill) was attached.
+	 *
+	 * There is also no -EBUSY hazard against mux_intc's <0x1b000 0x100>:
+	 * irq-rtd129x.c uses of_iomap() (no request_region), as do the
+	 * i2c2-i2c5 nodes that map the same window. The iso-side -EBUSY that
+	 * motivated the original shrink came from pwm@d0 / iso_reset@88,
+	 * which do take devm reservations; nothing equivalent sits here.
+	 *
+	 * NOT yet wired to any consumer (LED/rfkill/SATA-power nodes).
 	 */
 	misc_gpio: gpio@1b100 {
 		compatible = "realtek,rtd1295-misc-gpio";
-		reg = <0x1b100 0x100>, <0x1b000 0x10>;
+		reg = <0x1b100 0x100>, <0x1b000 0x100>;
 		interrupt-parent = <&mux_intc>;
 		interrupts = <0 19>, <0 20>;
 		gpio-controller;
