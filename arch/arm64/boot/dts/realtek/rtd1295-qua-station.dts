@@ -773,7 +773,6 @@
  * 起動に不要なものを全部止める。上がったら一つずつ status = "okay" に戻す。
  * CPU は CMDLINE の maxcpus=1 で 1 個だけ(spin-table 経路を通さない)。
  */
-&gmac { status = "disabled"; };
 &sata_phy { status = "disabled"; };
 &sata { status = "disabled"; };
 &scpu_clk { status = "disabled"; };
