@@ -774,11 +774,6 @@
  * CPU は CMDLINE の maxcpus=1 で 1 個だけ(spin-table 経路を通さない)。
  */
 &scpu_clk { status = "disabled"; };
-&i2c0 { status = "disabled"; };
-&i2c1 { status = "disabled"; };
-&i2c2 { status = "disabled"; };
-&i2c3 { status = "disabled"; };
-&i2c5 { status = "disabled"; };
 
 /* run14 (2026-09-19 22:50): USB ポート電源。4.9 rtk_usb_manager: port0-power-gpio = iso 1(出力),
  * port1/2-power-gpio = misc 19(出力)。misc 側はこのツリーにドライバが無いので initramfs から MMIO 直叩き。 */
