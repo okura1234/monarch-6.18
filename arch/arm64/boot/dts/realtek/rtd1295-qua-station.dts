@@ -782,3 +782,16 @@
 &i2c2 { status = "disabled"; };
 &i2c3 { status = "disabled"; };
 &i2c5 { status = "disabled"; };
+
+/* run14 (2026-09-19 22:50): USB ポート電源。4.9 rtk_usb_manager: port0-power-gpio = iso 1(出力),
+ * port1/2-power-gpio = misc 19(出力)。misc 側はこのツリーにドライバが無いので initramfs から MMIO 直叩き。 */
+/ {
+	usb_vbus_port0: regulator-usb-vbus-port0 {
+		compatible = "regulator-fixed";
+		regulator-name = "usb-vbus-port0";
+		gpio = <&rtk_iso_gpio 1 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+};
