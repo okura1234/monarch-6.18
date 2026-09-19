@@ -5,6 +5,7 @@ dtb-$(CONFIG_ARCH_REALTEK) += rtd1293-ds418j.dtb
 dtb-$(CONFIG_ARCH_REALTEK) += rtd1295-mele-v9.dtb
 dtb-$(CONFIG_ARCH_REALTEK) += rtd1295-probox2-ava.dtb
 dtb-$(CONFIG_ARCH_REALTEK) += rtd1295-wd-mycloud-home.dtb
+dtb-$(CONFIG_ARCH_REALTEK) += rtd1295-qua-station.dtb
 dtb-$(CONFIG_ARCH_REALTEK) += rtd1295-xnano-x5.dtb
 dtb-$(CONFIG_ARCH_REALTEK) += rtd1295-zidoo-x9s.dtb
 
@@ -17,6 +18,7 @@ dtb-$(CONFIG_ARCH_REALTEK) += rtd1295-zidoo-x9s.dtb
 # accident, from some earlier ad-hoc build never refreshed since. Applied
 # here properly via this flag rather than relying on that stale artifact.
 DTC_FLAGS_rtd1295-wd-mycloud-home := -p 0x4000
+DTC_FLAGS_rtd1295-qua-station := -p 0x4000
 
 dtb-$(CONFIG_ARCH_REALTEK) += rtd1296-ds418.dtb
 
