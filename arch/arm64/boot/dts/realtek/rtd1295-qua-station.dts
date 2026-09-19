@@ -791,30 +791,69 @@
 / {
 	leds {
 		compatible = "gpio-leds";
-		/* Qua: iso GPIO 側の LED のみ(misc GPIO 側 lte/imp/hdd/wifi_g はこのツリーに misc gpio ドライバが無いため未記載)。
-		 * 4.9 実測: brightness 0 で点灯 = active-low。label は 4.9 の sysfs 名 */
-		pwr_led_g { label = "pwr_led_g"; gpios = <&rtk_iso_gpio 29 GPIO_ACTIVE_LOW>; linux,default-trigger = "heartbeat"; };
+		/* run24 (2026-09-20): 実機で全LEDを点灯させて物理位置とラベルの対応を確定した。
+		 * 物理LEDは5箇所、すべて緑/赤の2色LED(両方点けるとオレンジ)。
+		 *   前面中 = wifi_led (g=misc 8,  r=iso 7)
+		 *   前面右 = hdd_led  (g=misc 6,  r=misc 7)
+		 *   上部   = imp_led  (g=misc 5,  r=misc 100)   COPYボタンの横
+		 *   前面左 = lte_led  (g=misc 19, r=misc 17)    LTE非搭載だが実装されている
+		 *   背面下 = pwr_led  (g=iso 29,  r=iso 30)     視認性が悪い
+		 * 「前面」= USB端子のある面(本来の背面)。かずの呼び方に合わせている。
+		 * 4.9 実測: brightness 0 で点灯 = active-low。label は 4.9 の sysfs 名。
+		 *
+		 * 🚫 lte_led_g (misc 19) は意図的に入れていない。4.9 の rtk_usb_manager が
+		 * realtek,port1-power-gpio / port2-power-gpio に同じ misc 19 を使っており、
+		 * 現在 rootfs が USB(/dev/sda) にあるため、動かすと起動ディスクの電源が落ちる。
+		 */
+
+		/* --- iso GPIO 側 --- */
+		pwr_led_g { label = "pwr_led_g"; gpios = <&rtk_iso_gpio 29 GPIO_ACTIVE_LOW>; default-state = "off"; };
 		pwr_led_r { label = "pwr_led_r"; gpios = <&rtk_iso_gpio 30 GPIO_ACTIVE_LOW>; default-state = "off"; };
 		wifi_led_r { label = "wifi_led_r"; gpios = <&rtk_iso_gpio 7 GPIO_ACTIVE_LOW>; default-state = "off"; };
 		led_ctrl { label = "led_ctrl"; gpios = <&rtk_iso_gpio 21 GPIO_ACTIVE_LOW>; default-state = "off"; };
 		led_ctrl1 { label = "led_ctrl1"; gpios = <&rtk_iso_gpio 20 GPIO_ACTIVE_LOW>; default-state = "on"; };
 
-		/* run23: first misc-GPIO consumer. hdd_led_g = misc 6, taken from
-		 * the 4.9 DTB (gpios = <0x2c 0x06 0x01 0x01> -> phandle 0x2c is
-		 * rtk_misc_gpio@9801b100, pin 6, active-low, default on).
-		 * Deliberately NOT one of misc 8 / misc 100: those two are hogged
-		 * by the 4.9 gpio node itself. gpio-leds is output-only and never
-		 * requests an irq, so this cannot hit the reg[1] window that run22
-		 * had to widen. */
-		hdd_led_g { label = "hdd_led_g"; gpios = <&misc_gpio 6 GPIO_ACTIVE_LOW>; default-state = "on"; };
+		/* --- misc GPIO 側 (run22 で gpiochip1 として動作確認済み) --- */
+
+		/* 前面右 = ブートインジケータ。かず要望「起動中は赤、起動したら緑」。
+		 * カーネル側は赤を点ける所まで。緑への切替は起動完了後に systemd
+		 * (qua-boot-led.service) が行う。gpio-leds が probe した時点から赤なので、
+		 * U-Boot の間は制御外である点に注意。 */
+		hdd_led_r { label = "hdd_led_r"; gpios = <&misc_gpio 7 GPIO_ACTIVE_LOW>; default-state = "on"; };
+		hdd_led_g { label = "hdd_led_g"; gpios = <&misc_gpio 6 GPIO_ACTIVE_LOW>; default-state = "off"; };
+
+		wifi_led_g { label = "wifi_led_g"; gpios = <&misc_gpio 8 GPIO_ACTIVE_LOW>; default-state = "off"; };
+		imp_led_g { label = "imp_led_g"; gpios = <&misc_gpio 5 GPIO_ACTIVE_LOW>; default-state = "off"; };
+		/* run24: 上部(視認性が良い)の赤をカーネルパニック表示に割り当てる。
+		 * この機体はシリアルコンソールが出ていないため、パニックしたのか
+		 * ハングしたのかを切り分ける手段が他に無い。CONFIG_LEDS_TRIGGER_PANIC=y。
+		 * run25: `panic-indicator;` が必要。ledtrig-panic.c は LED_PANIC_INDICATOR
+		 * フラグを持つ LED しか panic notifier で付け替えず、そのフラグは
+		 * leds-gpio.c の fwnode_property_present(child, "panic-indicator") からしか
+		 * 立たない。トリガ指定だけでは点滅遅延の解除が掛からない。 */
+		imp_led_r { label = "imp_led_r"; gpios = <&misc_gpio 100 GPIO_ACTIVE_LOW>; linux,default-trigger = "panic"; panic-indicator; };
+		lte_led_r { label = "lte_led_r"; gpios = <&misc_gpio 17 GPIO_ACTIVE_LOW>; default-state = "off"; };
 	};
 
 	gpio_keys: gpio-keys {
 		compatible = "gpio-keys";
-		reset { label = "RESET"; gpios = <&rtk_iso_gpio 18 GPIO_ACTIVE_HIGH>; linux,code = <KEY_RESTART>; };
-		wps { label = "WPS"; gpios = <&rtk_iso_gpio 31 GPIO_ACTIVE_HIGH>; linux,code = <KEY_WPS_BUTTON>; };
-		import { label = "IMPORT"; gpios = <&rtk_iso_gpio 32 GPIO_ACTIVE_HIGH>; linux,code = <KEY_COPY>; };
-		/* power { gpios = <&rtk_iso_gpio 8 GPIO_ACTIVE_HIGH>; linux,code = <KEY_POWER>; }; 極性未確定のため初回は無効 */
+		/* run24: 極性を ACTIVE_HIGH -> ACTIVE_LOW に修正。
+		 * 根拠: IMPORT(=前面のCOPYボタン)を実機で3回押した evtest の生出力で、
+		 * 押下時に value 0 / 離した時に value 1 が出ていた = プルアップ+押下でGND。
+		 * ACTIVE_HIGH のままでもエッジは両方取れるので実害は無かったが、
+		 * 押しっぱなし判定(長押しでpoweroff等)をするには向きが正しい必要がある。
+		 * RESET / WPS は物理的に押しにくく未検証だが、同一基板・同一ボタン列なので
+		 * 同じ極性とみなす。誤っていた場合も押下/離しが反転するだけ。 */
+		reset { label = "RESET"; gpios = <&rtk_iso_gpio 18 GPIO_ACTIVE_LOW>; linux,code = <KEY_RESTART>; };
+		wps { label = "WPS"; gpios = <&rtk_iso_gpio 31 GPIO_ACTIVE_LOW>; linux,code = <KEY_WPS_BUTTON>; };
+		import { label = "IMPORT"; gpios = <&rtk_iso_gpio 32 GPIO_ACTIVE_LOW>; linux,code = <KEY_COPY>; };
+
+		/* run24: POWER(iso 8) を有効化。4.9 の Askey,gpio-btns に POWER として
+		 * 定義されていたもの。極性が上記で判明したため有効化の根拠ができた。
+		 * ⚠️ KEY_POWER は systemd-logind の HandlePowerKey に直結する。
+		 * 物理ボタンの所在が未確認なので、誤爆を避けるため KEY_POWER ではなく
+		 * KEY_PROG1 で上げ、evtest で素性を確かめてから KEY_POWER に変える。 */
+		power { label = "POWER"; gpios = <&rtk_iso_gpio 8 GPIO_ACTIVE_LOW>; linux,code = <KEY_PROG1>; };
 	};
 };
 
