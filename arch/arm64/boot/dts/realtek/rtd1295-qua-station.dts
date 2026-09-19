@@ -321,7 +321,7 @@
 		};
 	};
 
-	sata@3f000 {
+	sata: sata@3f000 {
 		compatible = "realtek,rtd1295-ahci";
 		reg = <0x3f000 0xf00>;
 		interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>;
@@ -767,3 +767,18 @@
 		/* power { gpios = <&rtk_iso_gpio 8 GPIO_ACTIVE_HIGH>; linux,code = <KEY_POWER>; }; 極性未確定のため初回は無効 */
 	};
 };
+
+/*
+ * run8 (2026-09-19 21:45): 最小構成での切り分け。run7 は LED 初期化直後に停止したため、
+ * 起動に不要なものを全部止める。上がったら一つずつ status = "okay" に戻す。
+ * CPU は CMDLINE の maxcpus=1 で 1 個だけ(spin-table 経路を通さない)。
+ */
+&gmac { status = "disabled"; };
+&sata_phy { status = "disabled"; };
+&sata { status = "disabled"; };
+&scpu_clk { status = "disabled"; };
+&i2c0 { status = "disabled"; };
+&i2c1 { status = "disabled"; };
+&i2c2 { status = "disabled"; };
+&i2c3 { status = "disabled"; };
+&i2c5 { status = "disabled"; };
