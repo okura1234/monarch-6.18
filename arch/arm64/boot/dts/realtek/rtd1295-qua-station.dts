@@ -280,8 +280,10 @@
 	 * of range, bank 0 included. run21 shipped 0x10 and appeared to
 	 * work only because ioremap is page-granular (0x1b000-0x1bfff is
 	 * one page), so the out-of-bounds accesses went through silently;
-	 * that would have become a real OOB access the moment a GPIO
-	 * interrupt consumer (gpio-keys, rfkill) was attached.
+	 * that would have become a wrong-register write the moment a GPIO
+	 * interrupt consumer (gpio-keys, rfkill) was attached -- the access
+	 * stays inside the same mapped page, so it silently hits whatever
+	 * register happens to live at that offset instead of faulting.
 	 *
 	 * There is also no -EBUSY hazard against mux_intc's <0x1b000 0x100>:
 	 * irq-rtd129x.c uses of_iomap() (no request_region), as do the
@@ -796,6 +798,15 @@
 		wifi_led_r { label = "wifi_led_r"; gpios = <&rtk_iso_gpio 7 GPIO_ACTIVE_LOW>; default-state = "off"; };
 		led_ctrl { label = "led_ctrl"; gpios = <&rtk_iso_gpio 21 GPIO_ACTIVE_LOW>; default-state = "off"; };
 		led_ctrl1 { label = "led_ctrl1"; gpios = <&rtk_iso_gpio 20 GPIO_ACTIVE_LOW>; default-state = "on"; };
+
+		/* run23: first misc-GPIO consumer. hdd_led_g = misc 6, taken from
+		 * the 4.9 DTB (gpios = <0x2c 0x06 0x01 0x01> -> phandle 0x2c is
+		 * rtk_misc_gpio@9801b100, pin 6, active-low, default on).
+		 * Deliberately NOT one of misc 8 / misc 100: those two are hogged
+		 * by the 4.9 gpio node itself. gpio-leds is output-only and never
+		 * requests an irq, so this cannot hit the reg[1] window that run22
+		 * had to widen. */
+		hdd_led_g { label = "hdd_led_g"; gpios = <&misc_gpio 6 GPIO_ACTIVE_LOW>; default-state = "on"; };
 	};
 
 	gpio_keys: gpio-keys {
