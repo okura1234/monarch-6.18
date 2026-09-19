@@ -517,6 +517,12 @@
 
 &uart1 {
 	status = "okay"; /* Qua: RTL8761ATV Bluetooth (H5) */
+	/* run20: IRQ via MISC mux (index 0, bits 3+5), value taken verbatim
+	 * from 4.9 running-4.9.dts uart1 node (interrupt-parent phandle 0x27
+	 * = this mux_intc, interrupts = <0x00 0x03 0x00 0x05>).
+	 */
+	interrupt-parent = <&mux_intc>;
+	interrupts = <0 3>, <0 5>;
 };
 
 &uart2 {
