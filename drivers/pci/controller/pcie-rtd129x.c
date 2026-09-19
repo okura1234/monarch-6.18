@@ -12,6 +12,7 @@
 #include <linux/clk.h>
 #include <linux/bitfield.h>
 #include <linux/delay.h>
+#include <linux/dma-mapping.h>
 #include <linux/gpio/consumer.h>
 #include <linux/irqchip/chained_irq.h>
 #include <linux/irqdomain.h>
@@ -133,7 +134,7 @@
 
 #define LINK_ST_LINK_UP_ST		BIT(0)
 
-#define RTD129X_PCIE_USE_MSI		0
+#define RTD129X_PCIE_USE_MSI		1
 
 #define RTD129X_PCIE_QUIRK_SB4		BIT(0)
 #define RTD129X_PCIE_QUIRK_PHY_A	BIT(1)
@@ -171,6 +172,7 @@ struct rtd129x_pcie_priv {
 	struct irq_domain *msi_domain;
 	bool msi_allocated;
 	void *msi_data;
+	dma_addr_t msi_data_dma;
 	struct hotplug_slot hotplug_slot;
 	struct workqueue_struct *wq;
 	struct work_struct link_work;
@@ -282,6 +284,19 @@ static void rtd129x_pcie_irq_handle(struct irq_desc *desc)
 
 	gnr_int = readl_relaxed(data->ctrl_base + REG_GNR_INT);
 
+	if (RTD129X_PCIE_USE_MSI) {
+		u32 msi_data_reg = readl_relaxed(data->ctrl_base + REG_MSI_DATA);
+		u32 *ram = data->msi_data;
+		dev_info_ratelimited(&data->pdev->dev,
+			"irq: GNR_INT=%08x MSI_DATA=%08x ram[0]=%08x\n",
+			gnr_int, msi_data_reg, ram ? READ_ONCE(ram[0]) : 0);
+		/* diag: ram[0]==0 && ST=0 なら EP からの TLP 未到着とみなす。
+		 * MSI_DATA_ST が立っているのに GNR_INT bit14 が立たない場合は
+		 * 受信経路の enable 漏れとみなし、暫定で救済してハンドラへ回す。 */
+		if (!(gnr_int & GNR_INT_PCIE_LEGACY_MSI_INT) && (msi_data_reg & MSI_DATA_MSI_DATA_ST))
+			gnr_int |= GNR_INT_PCIE_LEGACY_MSI_INT;
+	}
+
 	if (RTD129X_PCIE_USE_MSI && (gnr_int & GNR_INT_PCIE_LEGACY_MSI_INT)) {
 		generic_handle_irq(irq_find_mapping(data->msi_irq_domain, 0));
 	}
@@ -317,8 +332,8 @@ static void rtd129x_pcie_msi_compose_msg(struct irq_data *d, struct msi_msg *msg
 	addr = virt_to_phys(data->msi_data);
 	msg->address_hi = upper_32_bits(addr);
 	msg->address_lo = lower_32_bits(addr);
-	val = readl_relaxed(data->ctrl_base + REG_MSI_DATA);
-	msg->data = FIELD_GET(MSI_DATA_MSI_DATA, val);
+	/* 受信レジスタ REG_MSI_DATA を読んで data にするのは循環定義(起動時0)。固定値にする。 */
+	msg->data = 0x0001;
 
 	dev_dbg(&data->pdev->dev, "msi#%d address_hi %#x address_lo %#x data %04x\n",
 		(int)d->hwirq, msg->address_hi, msg->address_lo, msg->data);
@@ -551,7 +566,7 @@ static int rtd129x_pcie_write_conf(struct pci_bus *bus, unsigned int devfn,
 	writel_relaxed(tmp, data->ctrl_base + REG_INDIR_CTR);
 	writel_relaxed(CFG_ST_ERROR_ST | CFG_ST_DONE_ST, data->ctrl_base + REG_CFG_ST);
 	writel_relaxed(addr & ~0x3, data->ctrl_base + REG_CFG_ADDR);
-	writel_relaxed(val, data->ctrl_base + REG_CFG_WDATA);
+	writel_relaxed(val << ((where & 0x3) * BITS_PER_BYTE), data->ctrl_base + REG_CFG_WDATA);
 	tmp = CFG_EN_WRRD_EN_WRITE;
 	if (size == 4)
 		tmp |= CFG_EN_BYTE_EN_ALL;
@@ -686,10 +701,11 @@ static struct pci_ops rtd129x_pcie_ops = {
 	.write	= rtd129x_pcie_write_conf,
 };
 
+#define RTD129X_MSI_TRAN_FLAGS		0	/* 実験1: 0 / 実験2: 1 (意味不明・要実測) */
+
 static int rtd129x_pcie_init_msi(struct rtd129x_pcie_priv *data)
 {
-	struct page *page;
-	phys_addr_t addr;
+	dma_addr_t dma_handle;
 
 	data->msi_irq_domain = irq_domain_add_linear(NULL, 1,
 						     &rtd129x_pcie_msi_domain_ops, data);
@@ -704,15 +720,21 @@ static int rtd129x_pcie_init_msi(struct rtd129x_pcie_priv *data)
 		return -ENOMEM;
 	}
 
-	page = alloc_pages(GFP_KERNEL, 0);
-	if (!page) {
+	/* diag: EPからのDMA書き込みをキャッシュのステイル読みなしで観測するため
+	 * coherent(uncached)割り当てにする。alloc_pages+page_address のキャッシャブルRAM
+	 * だと ram[0] の読みが古い値のままになりうる。 */
+	data->msi_data = dma_alloc_coherent(&data->pdev->dev, PAGE_SIZE, &dma_handle, GFP_KERNEL);
+	if (!data->msi_data) {
 		irq_domain_remove(data->msi_domain);
 		irq_domain_remove(data->msi_irq_domain);
 		return -ENOMEM;
 	}
-	data->msi_data = page_address(page);
-	addr = virt_to_phys(data->msi_data);
-	writel_relaxed(lower_32_bits(addr) & ~0x3, data->ctrl_base + REG_MSI_TRAN);
+	data->msi_data_dma = dma_handle;
+	writel_relaxed((lower_32_bits(dma_handle) & ~0x3) | RTD129X_MSI_TRAN_FLAGS,
+		       data->ctrl_base + REG_MSI_TRAN);
+	dev_info(&data->pdev->dev, "MSI doorbell phys=%pad MSI_TRAN=%08x INT_CTR=%08x\n",
+		 &dma_handle, readl_relaxed(data->ctrl_base + REG_MSI_TRAN),
+		 readl_relaxed(data->ctrl_base + REG_INT_CTR));
 
 	return 0;
 }
