@@ -268,6 +268,25 @@
 		status = "okay";
 	};
 
+	/* run21: misc GPIO controller (0x9801b100 = rbus offset 0x1b100).
+	 * Same driver as rtk_iso_gpio (gpio-rtd.c: realtek,rtd1295-misc-gpio),
+	 * 101 GPIOs (gpio_base=0). reg[1] deliberately shrunk to 0x10 bytes,
+	 * mirroring rtk_iso_gpio above, to avoid -EBUSY against mux_intc's
+	 * own <0x1b000 0x100> claim on the same window.
+	 * NOT yet wired to any consumer (LED/rfkill/SATA-power nodes) --
+	 * added standalone first per Fable advisory to check for register
+	 * contention before adding consumers.
+	 */
+	misc_gpio: gpio@1b100 {
+		compatible = "realtek,rtd1295-misc-gpio";
+		reg = <0x1b100 0x100>, <0x1b000 0x10>;
+		interrupt-parent = <&mux_intc>;
+		interrupts = <0 19>, <0 20>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		status = "okay";
+	};
+
 	/*
 	 * Cosmetic power-off -- see drivers/power/reset/wdmc-poweroff.c for
 	 * the full story on why this isn't a real power cut. reg[0] is the
