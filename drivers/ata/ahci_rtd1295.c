@@ -18,6 +18,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/io.h>
+#include <linux/gpio/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/ahci_platform.h>
 #include <linux/libata.h>
@@ -91,15 +92,33 @@ static void ahci_rtd1295_phy_pow_reset_deassert(struct device *dev)
 	dev_info(dev, "sata phy pow reset deasserted\n");
 }
 
-static void ahci_rtd1295_drive_power_on(struct device *dev)
+/*
+ * run27c: the drive-bay power GPIO differs per board (Monarch: misc 18,
+ * QuaStation: misc 16 -- vendor DTS sata-port@0 { gpios = <&rtk_misc_gpio
+ * 16 1 1>; }). Take it from the sata node's "power-gpios" via the gpiod
+ * consumer API now that the misc-gpio controller is in the tree. If the
+ * property is absent, fall back to the legacy raw poke of misc 18 so the
+ * Monarch DTS keeps working unchanged.
+ */
+static int ahci_rtd1295_drive_power_on(struct device *dev)
 {
+	struct gpio_desc *gpiod;
 	void __iomem *reg;
 	u32 val;
+
+	gpiod = devm_gpiod_get_optional(dev, "power", GPIOD_OUT_HIGH);
+	if (IS_ERR(gpiod))
+		return dev_err_probe(dev, PTR_ERR(gpiod),
+				     "can't get drive-bay power-gpios\n");
+	if (gpiod) {
+		dev_info(dev, "drive bay power gpio (power-gpios) driven high\n");
+		return 0;
+	}
 
 	reg = ioremap(RTD_MISC_GPIO_DIR, 4);
 	if (!reg) {
 		dev_warn(dev, "can't map misc-gpio dir register\n");
-		return;
+		return 0;
 	}
 	val = readl(reg);
 	writel(val | RTD_SATA_POWER_GPIO_BIT, reg);
@@ -108,13 +127,14 @@ static void ahci_rtd1295_drive_power_on(struct device *dev)
 	reg = ioremap(RTD_MISC_GPIO_DATO, 4);
 	if (!reg) {
 		dev_warn(dev, "can't map misc-gpio dato register\n");
-		return;
+		return 0;
 	}
 	val = readl(reg);
 	writel(val | RTD_SATA_POWER_GPIO_BIT, reg);
 	iounmap(reg);
 
-	dev_info(dev, "drive bay power gpio18 driven high\n");
+	dev_info(dev, "drive bay power gpio18 driven high (legacy poke)\n");
+	return 0;
 }
 
 static const struct ata_port_info ahci_rtd1295_port_info = {
@@ -195,7 +215,9 @@ static int ahci_rtd1295_probe(struct platform_device *pdev)
 	int rc;
 
 	ahci_rtd1295_phy_pow_reset_deassert(&pdev->dev);
-	ahci_rtd1295_drive_power_on(&pdev->dev);
+	rc = ahci_rtd1295_drive_power_on(&pdev->dev);
+	if (rc)
+		return rc;
 
 	hpriv = ahci_platform_get_resources(pdev, AHCI_PLATFORM_GET_RESETS);
 	if (IS_ERR(hpriv))

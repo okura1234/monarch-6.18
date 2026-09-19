@@ -337,6 +337,8 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		#phy-cells = <1>;
+		/* run27: clk_en_sata_alive_0 (CRT 0x0c bit 7), as in the 4.9 DTB */
+		clocks = <&clk_en_crt 7>;
 		status = "okay";
 
 		sata-phy@0 {
@@ -362,6 +364,31 @@
 		interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>;
 		phys = <&sata_phy 0>;
 		phy-names = "sata-phy";
+		/*
+		 * run27: clk_en_sata_0 (bit 2) + clk_en_sata_alive_0 (bit 7),
+		 * same pair the 4.9 DTB gives sata@9803F000. Both were
+		 * hw_enable=N in clk_summary on run26 -> the 0xdeadbeef reads.
+		 * libahci_platform picks these up via devm_clk_bulk_get_all().
+		 */
+		clocks = <&clk_en_crt 2>, <&clk_en_crt 7>;
+		/*
+		 * run27b: CRT reset bank1 bits 5 (RSTN_SATA_0), 7
+		 * (RSTN_SATA_PHY_0), 10 (RSTN_SATA_PHY_POW_0) -- the 4.9 DTB's
+		 * sata-port@0 resets. Measured on QuaStation's USB boot path
+		 * with clocks already on: 0x98000000 == 0xa7800755, i.e. bits
+		 * 5 and 7 still ASSERTED (unlike Monarch, whose bootloader
+		 * releases them), and every AHCI/PHY register reads 0xdeadbeef.
+		 * libahci_platform deasserts these after enabling clocks
+		 * (AHCI_PLATFORM_GET_RESETS), before phy_init().
+		 */
+		resets = <&reset1 5>, <&reset1 7>, <&reset1 10>;
+		/*
+		 * run27c: drive-bay power. QuaStation = misc GPIO 16 (vendor
+		 * sata-port@0 gpios), NOT the Monarch's misc 18. Confirmed live:
+		 * with 16 low the link stays at SStatus 0; gpioset 16=1 + rescan
+		 * brought the 1TB SSD up at 3.0 Gbps.
+		 */
+		power-gpios = <&misc_gpio 16 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
 
