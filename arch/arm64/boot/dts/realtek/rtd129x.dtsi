@@ -60,7 +60,9 @@
 			compatible = "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			ranges = <0x0 0x98000000 0x200000>;
+			ranges = <0x0 0x98000000 0x200000>,
+				 /* PCIe MMIO windows (slot1 0xc0000000, slot2 0xc1000000) */
+				 <0xc0000000 0xc0000000 0x02000000>;
 
 			crt: syscon@0 {
 				compatible = "syscon", "simple-mfd";

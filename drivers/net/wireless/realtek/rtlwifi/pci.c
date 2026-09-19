@@ -4,6 +4,7 @@
 #include "wifi.h"
 #include "core.h"
 #include "pci.h"
+#include <linux/pcie-rtd129x.h>
 #include "base.h"
 #include "ps.h"
 #include "efuse.h"
@@ -341,6 +342,44 @@ static void rtl_pci_init_aspm(struct ieee80211_hw *hw)
 	}
 }
 
+/*
+ * Realtek RTD129x SoC root ports cannot expose a device BAR as a CPU
+ * address; register access goes through the host driver's paged 4 KiB
+ * window instead (include/linux/pcie-rtd129x.h). Everything in rtlwifi
+ * already goes through the rtl_priv io function pointers, so swapping
+ * them here is the whole integration. Stubs compile away when
+ * CONFIG_PCIE_RTD129X is off.
+ */
+static u8 rtd129x_read8_sync(struct rtl_priv *rtlpriv, u32 addr)
+{
+	return rtd129x_pcie_mmio_read(to_pci_dev(rtlpriv->io.dev), addr, 1);
+}
+
+static u16 rtd129x_read16_sync(struct rtl_priv *rtlpriv, u32 addr)
+{
+	return rtd129x_pcie_mmio_read(to_pci_dev(rtlpriv->io.dev), addr, 2);
+}
+
+static u32 rtd129x_read32_sync(struct rtl_priv *rtlpriv, u32 addr)
+{
+	return rtd129x_pcie_mmio_read(to_pci_dev(rtlpriv->io.dev), addr, 4);
+}
+
+static void rtd129x_write8_async(struct rtl_priv *rtlpriv, u32 addr, u8 val)
+{
+	rtd129x_pcie_mmio_write(to_pci_dev(rtlpriv->io.dev), addr, 1, val);
+}
+
+static void rtd129x_write16_async(struct rtl_priv *rtlpriv, u32 addr, u16 val)
+{
+	rtd129x_pcie_mmio_write(to_pci_dev(rtlpriv->io.dev), addr, 2, val);
+}
+
+static void rtd129x_write32_async(struct rtl_priv *rtlpriv, u32 addr, u32 val)
+{
+	rtd129x_pcie_mmio_write(to_pci_dev(rtlpriv->io.dev), addr, 4, val);
+}
+
 static void _rtl_pci_io_handler_init(struct device *dev,
 				     struct ieee80211_hw *hw)
 {
@@ -355,6 +394,16 @@ static void _rtl_pci_io_handler_init(struct device *dev,
 	rtlpriv->io.read8 = pci_read8_sync;
 	rtlpriv->io.read16 = pci_read16_sync;
 	rtlpriv->io.read32 = pci_read32_sync;
+
+	if (rtd129x_pcie_dev_is_paged_mmio(to_pci_dev(dev))) {
+		dev_info(dev, "rtlwifi: using RTD129x paged MMIO window\n");
+		rtlpriv->io.write8 = rtd129x_write8_async;
+		rtlpriv->io.write16 = rtd129x_write16_async;
+		rtlpriv->io.write32 = rtd129x_write32_async;
+		rtlpriv->io.read8 = rtd129x_read8_sync;
+		rtlpriv->io.read16 = rtd129x_read16_sync;
+		rtlpriv->io.read32 = rtd129x_read32_sync;
+	}
 }
 
 static bool _rtl_update_earlymode_info(struct ieee80211_hw *hw,

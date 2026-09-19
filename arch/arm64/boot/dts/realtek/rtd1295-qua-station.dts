@@ -291,7 +291,8 @@
 	 * motivated the original shrink came from pwm@d0 / iso_reset@88,
 	 * which do take devm reservations; nothing equivalent sits here.
 	 *
-	 * NOT yet wired to any consumer (LED/rfkill/SATA-power nodes).
+	 * Consumers: gpio-leds (misc 5/6/7/8/17/100), sata power-gpios (16),
+	 * pcie1/pcie2 reset-gpios (18/20). misc 19 = USB port power: never touch.
 	 */
 	misc_gpio: gpio@1b100 {
 		compatible = "realtek,rtd1295-misc-gpio";
@@ -564,6 +565,97 @@
 	 * porting (confirmed valid {seconds, ~seconds} pair already there,
 	 * not FSBL data).
 	 */
+	/*
+	 * run28: PCIe root ports. Driver drivers/pci/controller/pcie-rtd129x.c
+	 * (A. Faerber's, with the soc_device dependency replaced by a direct
+	 * SB2 CHIP_REV read via realtek,sb2-syscon). Live QuaStation: A01, so
+	 * only the PHY_A quirk applies (= vendor phys_a table); no SB4 quirk,
+	 * and the vendor's pinmux write is commented out in the BSP too.
+	 *  slot1 (pcie1, PCIe 1.1): RTL8192EE 2.4GHz  clk crt@c bit1, PERST misc 18
+	 *  slot2 (pcie2, PCIe 2.0): RTL8812AE 5GHz    clk crt@10 bit5, PERST misc 20
+	 * Reset ids / clock bits / IRQs / MMIO windows machine-checked against
+	 * the running 4.9 DTB (pcie@9804E000, pcie2@9803B000). Vendor slot2
+	 * has speed-mode = 0 (GEN1) -> max-link-speed = <1> here as well.
+	 */
+	pcie1: pci@4e000 {
+		device_type = "pci";
+		compatible = "realtek,rtd1295-pcie-1.1";
+		reg = <0x4e000 0x1000>,
+		      <0x4f000 0x1000>,
+		      <0xc0000000 0x01000000>;
+		realtek,sb2-syscon = <&sb2>;
+		clocks = <&clk_en_crt 1>;
+		resets = <&reset2 RTD1295_RSTN_PCIE0>,
+			 <&reset2 RTD1295_RSTN_PCIE0_CORE>,
+			 <&reset2 RTD1295_RSTN_PCIE0_POWER>,
+			 <&reset2 RTD1295_RSTN_PCIE0_STITCH>,
+			 <&reset2 RTD1295_RSTN_PCIE0_NONSTICH>,
+			 <&reset2 RTD1295_RSTN_PCIE0_PHY>,
+			 <&reset4 RTD1295_RSTN_PCIE0_PHY_MDIO>;
+		reset-names = "pcie", "pcie_core", "pcie_power", "pcie_stitch",
+			      "pcie_nonstitch", "pcie_phy", "pcie_phy_mdio";
+		reset-gpios = <&misc_gpio 18 GPIO_ACTIVE_LOW>;
+		interrupts = <GIC_SPI 61 IRQ_TYPE_LEVEL_HIGH>;
+		#interrupt-cells = <1>;
+		interrupt-map-mask = <0 0 0 7>;
+		interrupt-map = <0 0 0 1 &pcie1_intc 0>,
+				<0 0 0 2 &pcie1_intc 1>,
+				<0 0 0 3 &pcie1_intc 2>,
+				<0 0 0 4 &pcie1_intc 3>;
+		bus-range = <0x00 0xff>;
+		num-lanes = <1>;
+		max-link-speed = <1>;
+		linux,pci-domain = <0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+		ranges = <0x02000000 0x00000000 0xc0000000  0xc0000000  0x00000000 0x01000000>;
+		status = "okay";
+
+		pcie1_intc: interrupt-controller {
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+	};
+
+	pcie2: pci@3b000 {
+		device_type = "pci";
+		compatible = "realtek,rtd1295-pcie-2.0";
+		reg = <0x3b000 0x1000>,
+		      <0x3c000 0x1000>,
+		      <0xc1000000 0x01000000>;
+		realtek,sb2-syscon = <&sb2>;
+		clocks = <&clk_en_crt2 5>;
+		resets = <&reset2 RTD1295_RSTN_PCIE1>,
+			 <&reset2 RTD1295_RSTN_PCIE1_CORE>,
+			 <&reset2 RTD1295_RSTN_PCIE1_POWER>,
+			 <&reset2 RTD1295_RSTN_PCIE1_STITCH>,
+			 <&reset2 RTD1295_RSTN_PCIE1_NONSTICH>,
+			 <&reset2 RTD1295_RSTN_PCIE1_PHY>,
+			 <&reset4 RTD1295_RSTN_PCIE1_PHY_MDIO>;
+		reset-names = "pcie", "pcie_core", "pcie_power", "pcie_stitch",
+			      "pcie_nonstitch", "pcie_phy", "pcie_phy_mdio";
+		reset-gpios = <&misc_gpio 20 GPIO_ACTIVE_LOW>;
+		interrupts = <GIC_SPI 62 IRQ_TYPE_LEVEL_HIGH>;
+		#interrupt-cells = <1>;
+		interrupt-map-mask = <0 0 0 7>;
+		interrupt-map = <0 0 0 1 &pcie2_intc 0>,
+				<0 0 0 2 &pcie2_intc 1>,
+				<0 0 0 3 &pcie2_intc 2>,
+				<0 0 0 4 &pcie2_intc 3>;
+		bus-range = <0x00 0xff>;
+		num-lanes = <1>;
+		max-link-speed = <1>;
+		linux,pci-domain = <1>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+		ranges = <0x02000000 0x00000000 0xc1000000  0xc1000000  0x00000000 0x01000000>;
+		status = "okay";
+
+		pcie2_intc: interrupt-controller {
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+	};
 };
 
 &uart0 {
