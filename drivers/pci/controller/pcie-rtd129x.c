@@ -327,9 +327,11 @@ static void rtd129x_pcie_msi_compose_msg(struct irq_data *d, struct msi_msg *msg
 {
 	struct rtd129x_pcie_priv *data = irq_data_get_irq_chip_data(d);
 	u32 val;
-	phys_addr_t addr;
+	dma_addr_t addr;
 
-	addr = virt_to_phys(data->msi_data);
+	/* virt_to_phys()はdma_alloc_coherent()の戻りアドレスに対して正しい保証がない。
+	 * MSI_TRANに実際に設定したdma_handle(msi_data_dma)をそのまま使う。 */
+	addr = data->msi_data_dma;
 	msg->address_hi = upper_32_bits(addr);
 	msg->address_lo = lower_32_bits(addr);
 	/* 受信レジスタ REG_MSI_DATA を読んで data にするのは循環定義(起動時0)。固定値にする。 */
