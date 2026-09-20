@@ -1,0 +1,100 @@
+#!/bin/sh
+# QuaStation 6.18 run11 診断 initramfs (2026-09-19)。USB rootfs を読まずにカーネル内から起動し、
+# 前周の pstore(ramoops) と dmesg を USB p3 へ書く。USB の大きい読み込みも試す。
+export PATH=/bin
+mkdir -p /dev /proc /sys /mnt /tmp
+[ -c /dev/console ] || mknod /dev/console c 5 1
+mount -t proc proc /proc; mount -t sysfs sysfs /sys; mount -t devtmpfs devtmpfs /dev
+mkdir -p /sys/fs/pstore; mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+echo "[qua-init] up $(cat /proc/uptime)" > /dev/kmsg
+# 生存証明: 前面左(lte_led_r)を点灯 = initramfs 段階に到達した印。
+# 起動完了時に qua-boot-led.service が消す。
+# run25: 以前はここで pwr_led_g と led_ctrl1 を叩いていたが、
+#   (1) `echo none > trigger` が DT の linux,default-trigger を無条件に潰し
+#   (2) `echo 255` が max_brightness=1 にクランプされて brightness=1 になり
+# DT の default-state="off" が効いていないように見える原因になっていた。
+# 対象は「DT で何も指定していない LED」に限ること。値は 1(max_brightness)。
+L=/sys/class/leds/lte_led_r
+[ -d $L ] && echo 1 > $L/brightness 2>/dev/null
+# USB port1/2 VBUS = misc GPIO 19 を出力 High (4.9 rtk_usb_manager 相当。misc gpio ドライバ無しのため MMIO 直叩き)
+if [ -x /bin/devmem ]; then
+  DIR=$(devmem 0x9801b100 32); DATO=$(devmem 0x9801b110 32)
+  devmem 0x9801b100 32 $(( DIR | 0x80000 )); devmem 0x9801b110 32 $(( DATO | 0x80000 ))
+  echo "[qua-init] misc gpio19 vbus: DIR $DIR->$(devmem 0x9801b100 32) DATO $DATO->$(devmem 0x9801b110 32)" > /dev/kmsg
+fi
+# root= に PARTUUID 指定があればそれを優先(SSD移植run31〜)。
+# 無指定/未発見なら従来の /dev/sd?3 走査へフォールバック。
+ROOT_PARTUUID=$(sed 's/^/ /' /proc/cmdline | sed -n 's/.* root=PARTUUID=\([^ ]*\).*/\1/p')
+# 🔴 RTD1295 の SATA は initramfs 実行中 deferred probe のまま完了しない(実測 run33:
+# 13s に probe 開始 → 保留 → systemd 起動後の 69s にようやく成功)。initramfs で待つだけでは
+# sdb が永久に現れないので、PHY → AHCI の順に明示的に probe を蹴る。
+if [ -n "$ROOT_PARTUUID" ]; then
+  mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+  for d in 9803ff00.sata-phy 9803f000.sata; do
+    echo "$d" > /sys/bus/platform/drivers_probe 2>/dev/kmsg
+    echo "[qua-init] kick probe $d" > /dev/kmsg
+  done
+fi
+ROOT=""; i=0
+while [ $i -lt 60 ]; do
+  if [ -n "$ROOT_PARTUUID" ]; then
+    # PARTUUID指定時はこれ一本で待つ(USBがSATAより先に出るため、早期フォールバックで
+    # 誤って旧デバイスを掴まないようにする)。見つからなければタイムアウトまで待つ。
+    for p in /sys/class/block/sd*[0-9]; do
+      [ -f "$p/uevent" ] || continue
+      pu=$(sed -n 's/^PARTUUID=//p' "$p/uevent")
+      [ -n "$pu" ] && [ "$pu" = "$ROOT_PARTUUID" ] && { ROOT=/dev/$(basename $p); break; }
+    done
+  else
+    for d in /dev/sda3 /dev/sdb3 /dev/sdc3; do [ -b $d ] && { ROOT=$d; break; }; done
+  fi
+  if [ -n "$ROOT_PARTUUID" ] && { [ "$i" = "8" ] || [ "$i" = "20" ] || [ "$i" = "35" ]; }; then
+    echo "[qua-init] dbg i=$i blk: $(ls /sys/class/block 2>&1 | tr '\n' ' ')" > /dev/kmsg
+    echo "[qua-init] dbg deferred: $(cat /sys/kernel/debug/devices_deferred 2>&1 | tr '\n' ' ')" > /dev/kmsg
+    for d in 9803ff00.sata-phy 9803f000.sata; do echo "$d" > /sys/bus/platform/drivers_probe 2>/dev/kmsg; done
+  fi
+  [ -n "$ROOT" ] && break; sleep 1; i=$((i+1))
+done
+# PARTUUID指定があったのにタイムアウトした場合のみ、最終手段として旧走査にフォールバック
+if [ -z "$ROOT" ] && [ -n "$ROOT_PARTUUID" ]; then
+  echo "[qua-init] partuuid $ROOT_PARTUUID not found after ${i}s, falling back" > /dev/kmsg
+  for d in /dev/sda3 /dev/sdb3 /dev/sdc3; do [ -b $d ] && { ROOT=$d; break; }; done
+fi
+echo "[qua-init] root=$ROOT (partuuid=$ROOT_PARTUUID) after ${i}s" > /dev/kmsg
+# BOOT(FAT) 側にも痕跡を書く(第2 チャネル)
+B=""; for d in /dev/sda1 /dev/sdb1; do [ -b $d ] && { B=$d; break; }; done
+if [ -n "$B" ]; then mkdir -p /boot && mount -t vfat -o rw $B /boot 2>/dev/kmsg && { dmesg > /boot/dmesg-run12.txt 2>&1; cat /proc/cpuinfo > /boot/cpuinfo-run12.txt; ls -la /dev/sd* > /boot/dev-run12.txt 2>&1; sync; umount /boot; }; fi
+if [ -n "$ROOT" ] && mount -t ext4 -o rw "$ROOT" /mnt 2>/dev/kmsg; then
+  # 🔧 run13: usrmerge 修復。tar 展開で /lib がシンボリックリンク(usr/lib)から実ディレクトリに化けていた
+  if [ ! -L /mnt/lib ] && [ -d /mnt/lib ] && [ -d /mnt/usr/lib ]; then
+    echo "[qua-init] repairing /lib -> usr/lib" > /dev/kmsg
+    mkdir -p /mnt/usr/lib/modules
+    for m in /mnt/lib/modules/*; do [ -d "$m" ] && { rm -rf "/mnt/usr/lib/modules/$(basename $m)"; mv "$m" /mnt/usr/lib/modules/; }; done
+    rm -rf /mnt/lib && ln -s usr/lib /mnt/lib && sync
+    echo "[qua-init] /lib repaired: $(ls -ld /mnt/lib)" > /dev/kmsg
+  fi
+  N=$(ls /mnt/var/log/boot-dump 2>/dev/null | wc -l); D=/mnt/var/log/boot-dump/ir-$N; mkdir -p $D
+  dmesg > $D/dmesg.txt 2>&1; cat /proc/cmdline > $D/cmdline.txt; cat /proc/cpuinfo > $D/cpuinfo.txt; cat /proc/uptime > $D/uptime.txt
+  ls -la /sys/class/leds /sys/class/net /dev/sd* > $D/sys.txt 2>&1
+  mkdir -p $D/pstore; cp -a /sys/fs/pstore/. $D/pstore/ 2>$D/pstore.err; ls -la /sys/fs/pstore >> $D/pstore.err 2>&1
+  sync
+  # USB 大容量読み込みテスト(1.9MB の /bb、20MB の raw)
+  dd if=/mnt/bb of=/dev/null bs=64k 2>$D/readtest-bb.txt; echo "rc=$?" >> $D/readtest-bb.txt
+  dd if=$ROOT of=/dev/null bs=1M count=20 2>$D/readtest-raw20m.txt; echo "rc=$?" >> $D/readtest-raw20m.txt
+  # rootfs の glibc バイナリを chroot で試す
+  chroot /mnt /bin/sh -c 'echo dash-ok' > $D/test-dash.txt 2>&1; echo "rc=$?" >> $D/test-dash.txt
+  dmesg > $D/dmesg-after.txt 2>&1; sync
+  echo "[qua-init] dump $D done" > /dev/kmsg
+  if true; then  # run13: 修復後は常に systemd へ
+    echo "[qua-init] cycle0: switch_root to systemd" > /dev/kmsg; sync
+    umount /sys/fs/pstore 2>/dev/null
+    exec switch_root /mnt /sbin/init
+  fi
+  echo "[qua-init] cycle$N: hold" > /dev/kmsg
+  sleep 3; ip link set eth0 up 2>>$D/net.txt; hostname qua618
+  udhcpc -i eth0 -b -q -x hostname:qua618 >> $D/net.txt 2>&1 || true
+  sleep 5; ip addr >> $D/net.txt 2>&1; sync
+else
+  echo "[qua-init] mount failed; hold" > /dev/kmsg
+fi
+while :; do sleep 60; done
