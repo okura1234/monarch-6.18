@@ -286,10 +286,19 @@ static void rtd129x_pcie_irq_handle(struct irq_desc *desc)
 
 	if (RTD129X_PCIE_USE_MSI) {
 		u32 msi_data_reg = readl_relaxed(data->ctrl_base + REG_MSI_DATA);
-		u32 *ram = data->msi_data;
-		dev_info_ratelimited(&data->pdev->dev,
-			"irq: GNR_INT=%08x MSI_DATA=%08x ram[0]=%08x\n",
-			gnr_int, msi_data_reg, ram ? READ_ONCE(ram[0]) : 0);
+		/* v44: この診断ログ(dev_info_ratelimited)がハンドラ入口で無条件に
+		 * 発火し、2026-09-21実測でカーネルログの91%(1分1230行中1115行)を
+		 * 占有してdmesgリングバッファを実質使用不能にしていた。
+		 * journalctl -k と /proc/interrupts の60秒差分で検証済み:
+		 *   親(このハンドラの発火数、推定下限3536) ≒ 子(EPドライバのMSI処理数3951)
+		 *   → 重複処理ではなく、Wi-Fi 2枚(8192EE+8812AE)が単純に高頻度で
+		 *     通信しているだけ(比率0.89、ほぼ1:1)。IRQ自体は正常。
+		 * また下記の「救済」分岐は実測サンプル全行でGNR_INT bit14が
+		 * 既に立っており(=既存条件で処理可能)、一度も踏まれていないことを
+		 * journalctl -k の生ログで確認済み。無害なため触らず残す。
+		 * → 削るのはこの診断ログだけで十分。全経緯=
+		 *   ~/.claude/skills/quastation/CHANGELOG.md 該当エントリ参照。
+		 */
 		/* diag: ram[0]==0 && ST=0 なら EP からの TLP 未到着とみなす。
 		 * MSI_DATA_ST が立っているのに GNR_INT bit14 が立たない場合は
 		 * 受信経路の enable 漏れとみなし、暫定で救済してハンドラへ回す。 */

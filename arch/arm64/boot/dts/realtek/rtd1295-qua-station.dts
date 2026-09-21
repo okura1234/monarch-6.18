@@ -458,6 +458,42 @@
 		#phy-cells = <0>;
 	};
 
+	/* v43: vendor "port2" = the box's standalone USB 2.0 socket.
+	 * The 4.9 vendor DTB routes it through EHCI 0x98013000 + OHCI 0x98013400
+	 * (rtd-129x-usb.dtsi: port2 = <&ehci &ohci>), NOT through any dwc3/xhci
+	 * block -- which is why mainline, having no ehci/ohci node at all, sees
+	 * absolutely nothing when a device is plugged into that socket.
+	 *
+	 * Prerequisites already satisfied by the existing tree:
+	 *  - reset: u2phy2 == <&reset2 RTD1295_RSTN_USB_PHY2> is already
+	 *    deasserted by usb_u2host above.
+	 *  - clocks: rtd-129x-usb.dtsi declares no clock-names at all on 1295
+	 *    (clk_en_phy*_to_host only exists on 139x/16xx), so the vendor
+	 *    manager's clk calls are no-ops here. Nothing to gate.
+	 *  - VBUS: realtek,port2-power-gpio = <&rtk_misc_gpio 19> and it is
+	 *    shared with port1 (the on-board LTE modem), which enumerates fine,
+	 *    so the rail is already up. Tested by hand: driving misc19 either
+	 *    way changes nothing.
+	 *
+	 * Open question: the vendor PHY "Realtek,rtd129x-usb_phy_rle0599" writes
+	 * page0/page1 parameter blocks that have no mainline equivalent. We first
+	 * try without any phy at all -- if the host registers but never detects a
+	 * device, that pins the failure on the missing PHY programming.
+	 * OHCI additionally wants wrap_reg 0x98013820, which generic-ohci does not
+	 * touch, so EHCI (high speed) is the one to judge by.
+	 */
+	usb_ehci: usb@13000 {
+		compatible = "generic-ehci";
+		reg = <0x13000 0x100>;
+		interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
+	usb_ohci: usb@13400 {
+		compatible = "generic-ohci";
+		reg = <0x13400 0x100>;
+		interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
 	usb_wrap_drd: usb@13200 {
 		/* v21: the DRD block drives the physical USB-A port on this box
 		 * (vendor ran it as an adb gadget and role-switched in software;
